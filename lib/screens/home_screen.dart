@@ -1,26 +1,25 @@
+// lib/screens/home_screen.dart
+// UPDATED — wires Chat tab → CommunityChatScreen,
+//            wires Marketplaces tab → MarketplacesScreen,
+//            wires Service providers tab → ServiceProvidersScreen,
+//            wires Settings tab → SettingsScreen,
+//            passes chatHasUnread to SoteriaBottomNav.
+
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'report_emergency_screen.dart';
 import 'notifications_screen.dart';
+import 'community_chat_screen.dart';
+import 'marketplaces_screen.dart';
+import 'service_providers_screen.dart';
+import 'settings_screen.dart'; // ← NEW
 
 // ════════════════════════════════════════════════════════════════════════════
 // HomeScreen — Emergency Request (SOS) Screen
-//
-// Entry point after:
-//  • "Go to Home" is tapped in VerificationPendingScreen, OR
-//  • The user opens the app and is already signed-in / logged-in.
-//
-// Features:
-//  • User avatar + name in header
-//  • Notification bell with badge
-//  • Large SOS button with pulse-ring animation on press/hold
-//  • "Available for emergency alert" toggle
-//  • Bottom navigation bar (Home | Chat | Marketplaces | Service Providers | Settings)
 // ════════════════════════════════════════════════════════════════════════════
 
 class HomeScreen extends StatefulWidget {
-  /// Pass the logged-in user's display name; falls back to 'User'.
   final String userName;
 
   const HomeScreen({super.key, this.userName = 'Heba Kheder'});
@@ -32,9 +31,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   // ── State ──────────────────────────────────────────────────────────────────
-  int _selectedNavIndex = 0; // 0 = Home (active)
-  bool _availableForAlert = true; // toggle default ON
-  bool _isSosPressing = false; // tracks long-press / tap-down
+  int _selectedNavIndex = 0;
+  bool _availableForAlert = true;
+  bool _isSosPressing = false;
+
+  /// Set to true whenever a new message arrives from another participant.
+  /// Cleared when the user opens the Chat screen.
+  bool _chatHasUnread = true; // start as true to match Figma
 
   // Pulse animation
   late AnimationController _pulseController;
@@ -49,7 +52,6 @@ class _HomeScreenState extends State<HomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..addStatusListener((status) {
-        // If SOS is still being held, keep looping; otherwise stop.
         if (status == AnimationStatus.completed) {
           if (_isSosPressing) {
             _pulseController.forward(from: 0);
@@ -80,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen>
       context,
       MaterialPageRoute(builder: (_) => const ReportEmergencyScreen()),
     );
-}
+  }
 
   void _startPulse() {
     setState(() => _isSosPressing = true);
@@ -89,6 +91,76 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _stopPulse() {
     setState(() => _isSosPressing = false);
+  }
+
+  /// Called when any bottom-nav item is tapped.
+  void _onNavTap(int index) {
+    if (index == 1) {
+      // Chat tab — clear unread badge and push chat screen
+      setState(() {
+        _chatHasUnread = false;
+        _selectedNavIndex = index;
+      });
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CommunityChatScreen(
+            selectedNavIndex: 1,
+            onNavTap: (i) {
+              Navigator.pop(context);
+              _onNavTap(i);
+            },
+            hasUnread: false,
+          ),
+        ),
+      );
+    } else if (index == 2) {
+      setState(() => _selectedNavIndex = index);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MarketplacesScreen(
+            selectedNavIndex: 2,
+            onNavTap: (i) {
+              Navigator.pop(context);
+              _onNavTap(i);
+            },
+          ),
+        ),
+      );
+    } else if (index == 3) {
+      // Service providers tab — push ServiceProvidersScreen
+      setState(() => _selectedNavIndex = index);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ServiceProvidersScreen(
+            selectedNavIndex: 3,
+            onNavTap: (i) {
+              Navigator.pop(context);
+              _onNavTap(i);
+            },
+          ),
+        ),
+      );
+    } else if (index == 4) {
+      // Settings tab — push SettingsScreen
+      setState(() => _selectedNavIndex = index);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SettingsScreen(
+            selectedNavIndex: 4,
+            onNavTap: (i) {
+              Navigator.pop(context);
+              _onNavTap(i);
+            },
+          ),
+        ),
+      );
+    } else {
+      setState(() => _selectedNavIndex = index);
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -132,7 +204,8 @@ class _HomeScreenState extends State<HomeScreen>
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                        MaterialPageRoute(
+                            builder: (_) => const NotificationsScreen()),
                       );
                     },
                     child: Stack(
@@ -216,21 +289,18 @@ class _HomeScreenState extends State<HomeScreen>
                       return Stack(
                         alignment: Alignment.center,
                         children: [
-                          // Outer pulse ring 3
                           if (_isSosPressing)
                             _PulseRing(
                               scale: _pulseAnim.value * 1.15,
                               opacity: (1 - _pulseController.value) * 0.12,
                               size: 230,
                             ),
-                          // Outer pulse ring 2
                           if (_isSosPressing)
                             _PulseRing(
                               scale: _pulseAnim.value * 1.08,
                               opacity: (1 - _pulseController.value) * 0.18,
                               size: 230,
                             ),
-                          // Inner pulse ring 1
                           if (_isSosPressing)
                             _PulseRing(
                               scale: _pulseAnim.value,
@@ -323,7 +393,8 @@ class _HomeScreenState extends State<HomeScreen>
       // ── Bottom Navigation Bar ─────────────────────────────────────────────
       bottomNavigationBar: SoteriaBottomNav(
         selectedIndex: _selectedNavIndex,
-        onTap: (index) => setState(() => _selectedNavIndex = index),
+        onTap: _onNavTap,
+        chatHasUnread: _chatHasUnread,
       ),
     );
   }

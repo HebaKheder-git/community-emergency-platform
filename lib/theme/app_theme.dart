@@ -11,6 +11,8 @@ class AppColors {
   static const Color borderGrey = Color(0xFFD9D9D9);
   static const Color success = Color(0xFF1FCB5E);
   static const Color background = Color(0xFFFFFFFF);
+  static const Color maroonCard = Color(0xFF6E1512);
+  static const Color whatsappGreen = Color(0xFF25D366);
 }
 
 class AppTextStyles {
