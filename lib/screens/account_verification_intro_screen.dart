@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import 'verification_step1_personal_info_screen.dart';
+import '../services/verification_status.dart';
+import 'home_screen.dart';
 
 /// Screen shown right after VerificationSuccessScreen.
 /// Gives the user a clear entry point into the 3-step account verification
@@ -82,8 +84,12 @@ class AccountVerificationIntroScreen extends StatelessWidget {
               Center(
                 child: GestureDetector(
                   onTap: () {
-                    // TODO: navigate to main home screen
-                    Navigator.popUntil(context, (route) => route.isFirst);
+                    VerificationStatus.instance.markUnverified(); // explicit, though it's already the default
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      (route) => false,
+                    );
                   },
                   child: const Text(
                     'Skip for now',

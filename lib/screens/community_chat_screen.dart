@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../models/chat_message.dart';
+import '../services/verification_status.dart';
+import '../widgets/unverified_access_notice.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 // CommunityChatScreen
@@ -243,7 +245,12 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         ),
       ),
 
-      body: Column(
+      body: ValueListenableBuilder<bool>(
+        valueListenable: VerificationStatus.instance.isVerified,
+        builder: (context, verified, _) {
+          if (!verified){
+            return UnverifiedAccessNotice();}
+          return Column(
         children: [
           // ── Message list ──────────────────────────────────────────────────
           Expanded(
@@ -284,7 +291,9 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
             onMicEnd: _stopRecording,
           ),
         ],
-      ),
+      );
+    },
+  ),
 
       // ── Bottom Nav ─────────────────────────────────────────────────────────
       bottomNavigationBar: SoteriaBottomNav(

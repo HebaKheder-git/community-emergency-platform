@@ -6,6 +6,8 @@ import '../widgets/bottom_nav_bar.dart';
 import '../widgets/service_provider_card.dart';
 import '../models/service_provider.dart';
 import '../models/marketplace.dart' show MarketLocation, MarketLocationX;
+import '../services/verification_status.dart';
+import '../widgets/unverified_access_notice.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ServiceProvidersScreen
@@ -231,7 +233,12 @@ class _ServiceProvidersScreenState extends State<ServiceProvidersScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F0F0),
-      body: SafeArea(
+      body: ValueListenableBuilder<bool>(
+      valueListenable: VerificationStatus.instance.isVerified,
+      builder: (context, verified, _) {
+        if (!verified){
+            return UnverifiedAccessNotice();}
+        return SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -345,7 +352,9 @@ class _ServiceProvidersScreenState extends State<ServiceProvidersScreen> {
             ),
           ],
         ),
-      ),
+      );
+      },
+),
       bottomNavigationBar: SoteriaBottomNav(
         selectedIndex: widget.selectedNavIndex,
         onTap: widget.onNavTap,

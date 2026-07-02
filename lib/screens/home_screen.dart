@@ -14,6 +14,8 @@ import 'community_chat_screen.dart';
 import 'marketplaces_screen.dart';
 import 'service_providers_screen.dart';
 import 'settings_screen.dart'; // ← NEW
+import '../services/verification_status.dart';
+import '../widgets/home_unverified_content.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 // HomeScreen — Emergency Request (SOS) Screen
@@ -168,7 +170,22 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F0F0),
-      body: SafeArea(
+      body: ValueListenableBuilder<bool>(
+  valueListenable: VerificationStatus.instance.isVerified,
+  builder: (context, verified, _) {
+    if (!verified) {
+      // Home only:
+      return HomeUnverifiedContent(
+        userName: widget.userName,
+        onBellTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+        ),
+      );
+      // Chat / Notifications / Service providers instead use:
+      // return const SafeArea(child: UnverifiedAccessNotice());
+    }
+    return SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -388,7 +405,9 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ],
         ),
-      ),
+      );
+     },
+    ),
 
       // ── Bottom Navigation Bar ─────────────────────────────────────────────
       bottomNavigationBar: SoteriaBottomNav(

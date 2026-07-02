@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/emergency_alert.dart';
 import 'emergency_alert_detail_screen.dart';
+import '../services/verification_status.dart';
+import '../widgets/unverified_access_notice.dart';
 
 /// "Notifications" screen — opened by tapping the notification bell on
 /// [HomeScreen]. Shows a scrollable list of emergency alerts the user has
@@ -43,7 +45,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         centerTitle: false,
       ),
-      body: _alerts.isEmpty
+      body: ValueListenableBuilder<bool>(
+        valueListenable: VerificationStatus.instance.isVerified,
+        builder: (context, verified, _) {
+          if (!verified){
+            return UnverifiedAccessNotice();}
+          return _alerts.isEmpty
           ? const _EmptyNotifications()
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -63,7 +70,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   },
                 );
               },
-            ),
+            );
+          },
+        ),
     );
   }
 }
