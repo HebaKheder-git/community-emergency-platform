@@ -4,6 +4,9 @@
 // Four sections: Account, Support & About, App settings, Actions.
 // Fully scrollable, matching the Figma design exactly.
 //
+// EDITED — see notes near _onLogoutPressed / the "Reset password" tile
+// below for what's wired to the backend and why.
+//
 // Verification-dependent content (driven by VerificationStatus.instance):
 //  • Account header  — verified: red star badge · unverified: "!NOT Verified"
 //  • Account tiles   — verified: Edit profile, Reset password, Change
@@ -15,6 +18,10 @@
 //  Support & About and App settings, plus Delete account / Log out inside
 //  Actions, are written once and shared byte-for-byte between both states.
 //
+// NOTE: VerificationStatus is still purely local — the Postman collection
+// has no identity-verification endpoints yet, so "verified" here doesn't
+// reflect anything the backend knows. Wire it up once those endpoints exist.
+//
 // Dialogs:
 //  • _AnonymousMemberDialog — toggle with warning copy (from Figma)
 //  • _AllowRatingDialog     — toggle with explanation copy (designed to match)
@@ -23,10 +30,15 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../services/verification_status.dart';
+import '../core/token_storage.dart';
+import '../cubits/auth/auth_cubit.dart';
+import '../cubits/password_reset/password_reset_cubit.dart';
+import '../cubits/password_reset/password_reset_state.dart';
 import 'edit_profile_screen.dart';
 import 'reset_password_email_otp_screen.dart';
 import 'reset_password_phone_screen.dart';
 import 'account_verification_intro_screen.dart';
+import 'login_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final int selectedNavIndex;
@@ -47,15 +59,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isAnonymous = false;
   bool _allowRating = true;
 
-  //    to sign up (wire this to your Qubit user model when ready):
-  // TODO: replace with actual value from user model / Qubit state.
-  // true  → user signed up with email   → send OTP to email
-  // false → user signed up with phone   → collect phone then send OTP
+  // EDITED — there is still no GET /me endpoint, so we can't fetch the real
+  // signed-up-with value from the backend. We read back whatever email was
+  // cached locally at sign up / login time (see TokenStorage). Since
+  // /auth/register is email-only right now, this is effectively always
+  // true — kept as a field so it's a one-line change once phone accounts
+  // exist on the backend.
   bool _userSignedUpWithEmail = true;
-  String _userEmail = 'sample23@gmail.com';
+  String _userEmail = '';
+  final _tokenStorage = TokenStorage();
+
   // ── App settings ───────────────────────────────────────────────────────────
   bool _isDarkTheme = false;
   String _selectedLanguage = 'English';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCachedProfile();
+  }
+
+  Future<void> _loadCachedProfile() async {
+    final email = await _tokenStorage.readEmail();
+    if (mounted && email != null) {
+      setState(() => _userEmail = email);
+    }
+  }
 
   // ── Dialogs ────────────────────────────────────────────────────────────────
 
@@ -178,6 +207,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // EDITED — POST /auth/password/forgot needs to run *before* we can show
+  // ResetPasswordEmailOtpScreen (it now requires a temp_token). Uses a
+  // throwaway PasswordResetCubit just to make that one call.
+  Future<void> _onResetPasswordTap() async {
+    if (!_userSignedUpWithEmail) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ResetPasswordPhoneScreen()),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    final cubit = PasswordResetCubit();
+    try {
+      await cubit.requestOtp(_userEmail);
+      if (!mounted) return;
+      Navigator.pop(context); // close the loading dialog
+
+      if (cubit.state.status == PasswordResetStatus.otpSent) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ResetPasswordEmailOtpScreen(
+              email: _userEmail,
+              tempToken: cubit.state.tempToken!,
+            ),
+          ),
+        );
+      } else if (cubit.state.errorMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(cubit.state.errorMessage!)),
+        );
+      }
+    } finally {
+      cubit.close();
+    }
+  }
+
+  // EDITED — wired to POST /auth/logout.
+  Future<void> _onLogoutPressed(BuildContext context) async {
+    final confirmed = await _showConfirmDialog(
+      title: 'Log out',
+      message: 'Are you sure you want to log out?',
+      confirmLabel: 'Log out',
+    );
+    if (!confirmed || !mounted) return;
+
+    final authCubit = AuthCubit();
+    await authCubit.logout();
+    authCubit.close();
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+  }
+
   /// Small red/grey "ON" / "OFF" pill shown next to a toggle-backed tile.
   Widget _pillBadge(String label, Color color) {
     return Container(
@@ -244,27 +338,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _SettingsTile(
                       icon: Icons.security_outlined,
                       label: 'Reset password',
-                      onTap: () {
-                        if (_userSignedUpWithEmail) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ResetPasswordEmailOtpScreen(
-                                email: ResetPasswordEmailOtpScreen.maskEmail(
-                                    _userEmail),
-                              ),
-                            ),
-                          );
-                        } else {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  const ResetPasswordPhoneScreen(),
-                            ),
-                          );
-                        }
-                      },
+                      onTap: _onResetPasswordTap,
                     ),
                     if (isVerified) ...[
                       _SettingsTile(
@@ -341,7 +415,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           confirmLabel: 'Delete',
                         );
                         if (confirmed) {
-                          // TODO: call delete account API
+                          // TODO: call delete account API — no such endpoint
+                          // in the Postman collection yet.
                         }
                       },
                     ),
@@ -349,16 +424,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.logout_rounded,
                       label: 'Log out',
                       labelColor: AppColors.primaryRed,
-                      onTap: () async {
-                        final confirmed = await _showConfirmDialog(
-                          title: 'Log out',
-                          message: 'Are you sure you want to log out?',
-                          confirmLabel: 'Log out',
-                        );
-                        if (confirmed) {
-                          // TODO: clear session and navigate to LoginScreen
-                        }
-                      },
+                      onTap: () => _onLogoutPressed(context),
                       showDivider: false,
                     ),
                   ];

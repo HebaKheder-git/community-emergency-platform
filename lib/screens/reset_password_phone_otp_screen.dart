@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/otp_input_boxes.dart';
 import '../widgets/primary_button.dart';
-import 'create_new_password_screen.dart';
+// import 'create_new_password_screen.dart';
 
 class ResetPasswordPhoneOtpScreen extends StatefulWidget {
   /// The phone number the code was sent to (displayed in the subtitle).
@@ -78,10 +78,10 @@ class _ResetPasswordPhoneOtpScreenState
     setState(() => _isVerifying = false);
     if (!mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const CreateNewPasswordScreen()),
-    );
+    //Navigator.pushReplacement(
+    //  context,
+    //  MaterialPageRoute(builder: (_) => const CreateNewPasswordScreen()),
+    //);
   }
 
   @override

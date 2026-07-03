@@ -1,5 +1,20 @@
+// EDITED — wired to POST /auth/register.
+//
+// Scenario/backend mismatch: /auth/register only accepts {name, email,
+// password, password_confirmation}. There is no phone-based registration
+// endpoint yet, so the Phone pill is kept in the UI (per your Figma) but
+// blocked at submit time with a clear message instead of silently being
+// sent as if it worked. Swap the TODO block for real phone support once
+// Yosef adds it.
+//
+// Google / Facebook buttons are left as TODOs, per your note that those
+// aren't implemented in the backend yet.
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../cubits/auth/auth_cubit.dart';
+import '../cubits/auth/auth_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/auth_text_field.dart';
 import '../widgets/contact_method_toggle.dart';
@@ -25,11 +40,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _confirmPasswordController = TextEditingController();
 
   ContactMethod _method = ContactMethod.email;
-  bool _isLoading = false;
 
-  // Confirm-password field only appears once the user starts typing a
-  // password — mirrors the difference between image 1 (no confirm field)
-  // and image 2 (confirm field present).
   bool get _showConfirmPassword => _passwordController.text.isNotEmpty;
 
   @override
@@ -75,165 +86,184 @@ class _SignUpScreenState extends State<SignUpScreen> {
     return null;
   }
 
-  void _onSignUpPressed() async {
+  void _onSignUpPressed(BuildContext context) {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
-
-    // TODO: replace with your backend call (Yosef's API) via your Bloc/Cubit.
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    setState(() => _isLoading = false);
-    if (!mounted) return;
-
-    final contact = _method == ContactMethod.email
-        ? _emailController.text.trim()
-        : _phoneController.text.trim();
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OtpVerificationScreen(
-          verificationType: _method == ContactMethod.email
-              ? OtpVerificationType.email
-              : OtpVerificationType.phone,
-          destination: contact,
+    if (_method == ContactMethod.phone) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sign up with phone isn\'t available yet — please use email.'),
         ),
-      ),
-    );
+      );
+      return;
+    }
+
+    context.read<AuthCubit>().register(
+          name: _nameController.text.trim(),
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+          passwordConfirmation: _confirmPasswordController.text,
+        );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.screenPadding,
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 24),
-                RichText(
-                  text: const TextSpan(
-                    style: AppTextStyles.heading,
+    return BlocProvider(
+      create: (_) => AuthCubit(),
+      child: BlocConsumer<AuthCubit, AuthState>(
+        listener: (context, state) {
+          if (state.status == AuthStatus.registerAwaitingOtp) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OtpVerificationScreen(
+                  verificationType: OtpVerificationType.email,
+                  destination: _emailController.text.trim(),
+                  tempToken: state.tempToken!,
+                ),
+              ),
+            );
+          } else if (state.status == AuthStatus.failure &&
+              state.errorMessage != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.errorMessage!)),
+            );
+          }
+        },
+        builder: (context, state) {
+          final isLoading = state.status == AuthStatus.loading;
+          return Scaffold(
+            body: SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.screenPadding,
+                ),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextSpan(text: "Let's sign you up"),
-                      TextSpan(text: '.', style: TextStyle(color: AppColors.primaryRed)),
+                      const SizedBox(height: 24),
+                      RichText(
+                        text: const TextSpan(
+                          style: AppTextStyles.heading,
+                          children: [
+                            TextSpan(text: "Let's sign you up"),
+                            TextSpan(text: '.', style: TextStyle(color: AppColors.primaryRed)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text('Welcome.', style: AppTextStyles.subtitle),
+                      const SizedBox(height: 28),
+
+                      const Text('Full Name', style: AppTextStyles.fieldLabel),
+                      const SizedBox(height: AppSpacing.smallGap),
+                      AuthTextField(
+                        controller: _nameController,
+                        hintText: 'Your name',
+                        icon: Icons.person_outline,
+                        validator: _validateName,
+                      ),
+                      const SizedBox(height: AppSpacing.fieldGap),
+
+                      ContactMethodToggle(
+                        selected: _method,
+                        onChanged: (method) => setState(() => _method = method),
+                      ),
+                      const SizedBox(height: AppSpacing.smallGap),
+                      if (_method == ContactMethod.email)
+                        AuthTextField(
+                          key: const ValueKey('email_field'),
+                          controller: _emailController,
+                          hintText: 'Your email',
+                          icon: Icons.email_outlined,
+                          keyboardType: TextInputType.emailAddress,
+                          validator: _validateContact,
+                        )
+                      else
+                        AuthTextField(
+                          key: const ValueKey('phone_field'),
+                          controller: _phoneController,
+                          hintText: 'Your phone number',
+                          icon: Icons.phone_outlined,
+                          keyboardType: TextInputType.phone,
+                          validator: _validateContact,
+                        ),
+                      const SizedBox(height: AppSpacing.fieldGap),
+
+                      const Text('Password', style: AppTextStyles.fieldLabel),
+                      const SizedBox(height: AppSpacing.smallGap),
+                      AuthTextField(
+                        controller: _passwordController,
+                        hintText: 'Enter password',
+                        icon: Icons.lock_outline,
+                        obscureText: true,
+                        validator: _validatePassword,
+                        onChanged: (_) => setState(() {}),
+                      ),
+
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: _showConfirmPassword
+                            ? Padding(
+                                padding: const EdgeInsets.only(top: AppSpacing.fieldGap),
+                                child: AuthTextField(
+                                  controller: _confirmPasswordController,
+                                  hintText: 'Confirm password',
+                                  icon: Icons.lock_outline,
+                                  obscureText: true,
+                                  validator: _validateConfirmPassword,
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+
+                      const SizedBox(height: 40),
+                      PrimaryButton(
+                        label: 'Sign up',
+                        isLoading: isLoading,
+                        onPressed: () => _onSignUpPressed(context),
+                      ),
+                      const SizedBox(height: 24),
+                      SocialLoginRow(
+                        onGooglePressed: () {
+                          // TODO: not implemented in backend yet.
+                        },
+                        onFacebookPressed: () {
+                          // TODO: not implemented in backend yet.
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      Center(
+                        child: RichText(
+                          text: TextSpan(
+                            style: AppTextStyles.footerText,
+                            children: [
+                              const TextSpan(text: 'Already a member? '),
+                              TextSpan(
+                                text: 'Log in',
+                                style: AppTextStyles.linkRed,
+                                recognizer: TapGestureRecognizer()
+                                  ..onTap = () {
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                    );
+                                  },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                const Text('Welcome.', style: AppTextStyles.subtitle),
-                const SizedBox(height: 28),
-
-                const Text('Full Name', style: AppTextStyles.fieldLabel),
-                const SizedBox(height: AppSpacing.smallGap),
-                AuthTextField(
-                  controller: _nameController,
-                  hintText: 'Your name',
-                  icon: Icons.person_outline,
-                  validator: _validateName,
-                ),
-                const SizedBox(height: AppSpacing.fieldGap),
-
-                ContactMethodToggle(
-                  selected: _method,
-                  onChanged: (method) => setState(() => _method = method),
-                ),
-                const SizedBox(height: AppSpacing.smallGap),
-                if (_method == ContactMethod.email)
-                  AuthTextField(
-                    key: const ValueKey('email_field'),
-                    controller: _emailController,
-                    hintText: 'Your email',
-                    icon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress,
-                    validator: _validateContact,
-                  )
-                else
-                  AuthTextField(
-                    key: const ValueKey('phone_field'),
-                    controller: _phoneController,
-                    hintText: 'Your phone number',
-                    icon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                    validator: _validateContact,
-                  ),
-                const SizedBox(height: AppSpacing.fieldGap),
-
-                const Text('Password', style: AppTextStyles.fieldLabel),
-                const SizedBox(height: AppSpacing.smallGap),
-                AuthTextField(
-                  controller: _passwordController,
-                  hintText: 'Enter password',
-                  icon: Icons.lock_outline,
-                  obscureText: true,
-                  validator: _validatePassword,
-                  onChanged: (_) => setState(() {}),
-                ),
-
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: _showConfirmPassword
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: AppSpacing.fieldGap),
-                          child: AuthTextField(
-                            controller: _confirmPasswordController,
-                            hintText: 'Confirm password',
-                            icon: Icons.lock_outline,
-                            obscureText: true,
-                            validator: _validateConfirmPassword,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-
-                const SizedBox(height: 40),
-                PrimaryButton(
-                  label: 'Sign up',
-                  isLoading: _isLoading,
-                  onPressed: _onSignUpPressed,
-                ),
-                const SizedBox(height: 24),
-                SocialLoginRow(
-                  onGooglePressed: () {
-                    // TODO: hook up Google sign-in
-                  },
-                  onFacebookPressed: () {
-                    // TODO: hook up Facebook sign-in
-                  },
-                ),
-                const SizedBox(height: 24),
-                Center(
-                  child: RichText(
-                    text: TextSpan(
-                      style: AppTextStyles.footerText,
-                      children: [
-                        const TextSpan(text: 'Already a member? '),
-                        TextSpan(
-                          text: 'Log in',
-                          style: AppTextStyles.linkRed,
-                          recognizer: TapGestureRecognizer()
-                            ..onTap = () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                              );
-                            },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
