@@ -2,8 +2,7 @@
 
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import 'primary_button.dart';
-import '../screens/account_verification_intro_screen.dart';
+import 'verification_prompt_card.dart';
 
 /// The "you have to verify your account..." block shown in place of a
 /// section's real content when the current user hasn't verified their
@@ -61,56 +60,7 @@ class UnverifiedAccessNotice extends StatelessWidget {
           const SizedBox(height: 32),
 
           // ── Verification prompt ─────────────────────────────────────
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: const BoxDecoration(
-                  color: AppColors.primaryRed,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.star, color: Colors.white, size: 15),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Let's get your account verified!",
-                      style: AppTextStyles.linkRed.copyWith(fontSize: 17),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'verified accounts get full access to\n'
-                      'all platform features.',
-                      style: AppTextStyles.subtitle,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: 200,
-            child: PrimaryButton(
-              label: 'Start Verification',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const AccountVerificationIntroScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
+          const VerificationPromptCard(),
         ],
       ),
     );

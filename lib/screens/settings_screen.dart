@@ -4,6 +4,17 @@
 // Four sections: Account, Support & About, App settings, Actions.
 // Fully scrollable, matching the Figma design exactly.
 //
+// Verification-dependent content (driven by VerificationStatus.instance):
+//  • Account header  — verified: red star badge · unverified: "!NOT Verified"
+//  • Account tiles   — verified: Edit profile, Reset password, Change
+//                       permanent residence, Anonymous member, Allow account
+//                       rating · unverified: Edit profile, Reset password,
+//                       Verify your account
+//  • Actions tiles   — verified: Report a problem, Apply for a role, Delete
+//                       account, Log out · unverified: Delete account, Log out
+//  Support & About and App settings, plus Delete account / Log out inside
+//  Actions, are written once and shared byte-for-byte between both states.
+//
 // Dialogs:
 //  • _AnonymousMemberDialog — toggle with warning copy (from Figma)
 //  • _AllowRatingDialog     — toggle with explanation copy (designed to match)
@@ -11,9 +22,11 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
+import '../services/verification_status.dart';
 import 'edit_profile_screen.dart';
 import 'reset_password_email_otp_screen.dart';
 import 'reset_password_phone_screen.dart';
+import 'account_verification_intro_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final int selectedNavIndex;
@@ -165,6 +178,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// Small red/grey "ON" / "OFF" pill shown next to a toggle-backed tile.
+  Widget _pillBadge(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -190,213 +222,97 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             // ── Scrollable body ─────────────────────────────────────────────
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                children: [
-
-                  // ── ACCOUNT ───────────────────────────────────────────────
-                  _SectionHeader(
-                    label: 'Account',
-                    badge: Container(
-                      width: 22,
-                      height: 22,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryRed,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.star,
-                        color: Colors.white,
-                        size: 13,
-                      ),
+              child: ValueListenableBuilder<bool>(
+                valueListenable: VerificationStatus.instance.isVerified,
+                builder: (context, isVerified, _) {
+                  // ── Account tiles ───────────────────────────────────────
+                  // "Edit profile" and "Reset password" are shared — written
+                  // once — for both verification states.
+                  final accountTiles = <Widget>[
+                    _SettingsTile(
+                      icon: Icons.person_outline_rounded,
+                      label: 'Edit profile',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const EditProfileScreen(),
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  _SettingsCard(
-                    items: [
-                      _SettingsTile(
-                        icon: Icons.person_outline_rounded,
-                        label: 'Edit profile',
-                        onTap: () {
-                         Navigator.push(
-                           context,
-                           MaterialPageRoute(
-                             builder: (_) => const EditProfileScreen(),
-                           ),
-                         );
-                       },
-                      ),
-                      _SettingsTile(
-                        icon: Icons.security_outlined,
-                        label: 'Reset password',
-                        onTap: () {
-                          if (_userSignedUpWithEmail) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ResetPasswordEmailOtpScreen(
-                                  email: ResetPasswordEmailOtpScreen.maskEmail(_userEmail),
-                                ),
+                    _SettingsTile(
+                      icon: Icons.security_outlined,
+                      label: 'Reset password',
+                      onTap: () {
+                        if (_userSignedUpWithEmail) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ResetPasswordEmailOtpScreen(
+                                email: ResetPasswordEmailOtpScreen.maskEmail(
+                                    _userEmail),
                               ),
-                            );
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ResetPasswordPhoneScreen(),
-                              ),
-                            );
-                          }
-                        },
-                      ),
+                            ),
+                          );
+                        } else {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const ResetPasswordPhoneScreen(),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                    if (isVerified) ...[
                       _SettingsTile(
                         icon: Icons.notifications_none_rounded,
                         label: 'Change permanent residence place',
-                        onTap: () { 
+                        onTap: () {
                           // TODO: navigate to ResidencePickerScreen
                         },
                       ),
-                      // Anonymous member — shows toggle dialog
                       _SettingsTile(
                         icon: Icons.lock_outline_rounded,
                         label: 'Anonymous member',
                         trailing: _isAnonymous
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryRed.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text(
-                                  'ON',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.primaryRed,
-                                  ),
-                                ),
-                              )
+                            ? _pillBadge('ON', AppColors.primaryRed)
                             : null,
                         onTap: _showAnonymousDialog,
                       ),
-                      // Allow account rating — shows toggle dialog
                       _SettingsTile(
                         icon: Icons.star_border_rounded,
                         label: 'Allow account rating',
                         trailing: !_allowRating
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.textGrey.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text(
-                                  'OFF',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.textGrey,
-                                  ),
-                                ),
-                              )
+                            ? _pillBadge('OFF', AppColors.textGrey)
                             : null,
                         onTap: _showRatingDialog,
                         showDivider: false,
                       ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // ── SUPPORT & ABOUT ───────────────────────────────────────
-                  const _SectionHeader(label: 'Support & About'),
-                  const SizedBox(height: 8),
-                  _SettingsCard(
-                    items: [
+                    ] else
                       _SettingsTile(
-                        icon: Icons.help_outline_rounded,
-                        label: 'Help & Support',
+                        icon: Icons.star_border_rounded,
+                        label: 'Verify your account',
                         onTap: () {
-                          // TODO: navigate to HelpScreen
-                        },
-                      ),
-                      _SettingsTile(
-                        icon: Icons.info_outline_rounded,
-                        label: 'Terms and Policies',
-                        onTap: () {
-                          // TODO: navigate to TermsScreen
-                        },
-                      ),
-                      _SettingsTile(
-                        icon: Icons.language_rounded,
-                        label: 'Visit our Website',
-                        onTap: () {
-                          // TODO: launch URL
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  const AccountVerificationIntroScreen(),
+                            ),
+                          );
                         },
                         showDivider: false,
                       ),
-                    ],
-                  ),
+                  ];
 
-                  const SizedBox(height: 24),
-
-                  // ── APP SETTINGS ──────────────────────────────────────────
-                  const _SectionHeader(label: 'App settings'),
-                  const SizedBox(height: 8),
-                  _SettingsCard(
-                    items: [
-                      _SettingsTile(
-                        icon: Icons.dark_mode_outlined,
-                        label: 'Light theme/ Dark theme',
-                        trailing: Switch(
-                          value: _isDarkTheme,
-                          onChanged: (val) =>
-                              setState(() => _isDarkTheme = val),
-                          activeColor: Colors.white,
-                          activeTrackColor: AppColors.primaryRed,
-                          inactiveThumbColor: Colors.white,
-                          inactiveTrackColor: AppColors.borderGrey,
-                          thumbColor: WidgetStateProperty.all(Colors.white),
-                        ),
-                        onTap: () =>
-                            setState(() => _isDarkTheme = !_isDarkTheme),
-                      ),
-                      _SettingsTile(
-                        icon: Icons.translate_rounded,
-                        label: 'App language',
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _selectedLanguage,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textGrey,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              color: AppColors.textGrey,
-                              size: 20,
-                            ),
-                          ],
-                        ),
-                        onTap: _showLanguagePicker,
-                        showDivider: false,
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // ── ACTIONS ───────────────────────────────────────────────
-                  const _SectionHeader(label: 'Actions'),
-                  const SizedBox(height: 8),
-                  _SettingsCard(
-                    items: [
+                  // ── Action tiles ────────────────────────────────────────
+                  // "Delete account" and "Log out" are shared — written
+                  // once — for both verification states.
+                  final actionTiles = <Widget>[
+                    if (isVerified) ...[
                       _SettingsTile(
                         icon: Icons.flag_outlined,
                         label: 'Report a problem',
@@ -411,42 +327,168 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           // TODO: navigate to ApplyRoleScreen
                         },
                       ),
-                      _SettingsTile(
-                        icon: Icons.group_remove_outlined,
-                        label: 'Delete account',
-                        labelColor: AppColors.primaryRed,
-                        onTap: () async {
-                          final confirmed = await _showConfirmDialog(
-                            title: 'Delete account',
-                            message:
-                                'This action is permanent and cannot be undone. '
-                                'All your data will be removed.',
-                            confirmLabel: 'Delete',
-                          );
-                          if (confirmed) {
-                            // TODO: call delete account API
-                          }
-                        },
-                      ),
-                      _SettingsTile(
-                        icon: Icons.logout_rounded,
-                        label: 'Log out',
-                        labelColor: AppColors.primaryRed,
-                        onTap: () async {
-                          final confirmed = await _showConfirmDialog(
-                            title: 'Log out',
-                            message: 'Are you sure you want to log out?',
-                            confirmLabel: 'Log out',
-                          );
-                          if (confirmed) {
-                            // TODO: clear session and navigate to LoginScreen
-                          }
-                        },
-                        showDivider: false,
-                      ),
                     ],
-                  ),
-                ],
+                    _SettingsTile(
+                      icon: Icons.group_remove_outlined,
+                      label: 'Delete account',
+                      labelColor: AppColors.primaryRed,
+                      onTap: () async {
+                        final confirmed = await _showConfirmDialog(
+                          title: 'Delete account',
+                          message:
+                              'This action is permanent and cannot be undone. '
+                              'All your data will be removed.',
+                          confirmLabel: 'Delete',
+                        );
+                        if (confirmed) {
+                          // TODO: call delete account API
+                        }
+                      },
+                    ),
+                    _SettingsTile(
+                      icon: Icons.logout_rounded,
+                      label: 'Log out',
+                      labelColor: AppColors.primaryRed,
+                      onTap: () async {
+                        final confirmed = await _showConfirmDialog(
+                          title: 'Log out',
+                          message: 'Are you sure you want to log out?',
+                          confirmLabel: 'Log out',
+                        );
+                        if (confirmed) {
+                          // TODO: clear session and navigate to LoginScreen
+                        }
+                      },
+                      showDivider: false,
+                    ),
+                  ];
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    children: [
+                      // ── ACCOUNT ───────────────────────────────────────────
+                      _SectionHeader(
+                        label: 'Account',
+                        badge: isVerified
+                            ? Container(
+                                width: 22,
+                                height: 22,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primaryRed,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.star,
+                                  color: Colors.white,
+                                  size: 13,
+                                ),
+                              )
+                            : const Text(
+                                '!NOT Verified',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primaryRed,
+                                ),
+                              ),
+                      ),
+                      const SizedBox(height: 8),
+                      _SettingsCard(items: accountTiles),
+
+                      const SizedBox(height: 24),
+
+                      // ── SUPPORT & ABOUT ─────────────────────────────────
+                      // SHARED — identical for verified & unverified users.
+                      const _SectionHeader(label: 'Support & About'),
+                      const SizedBox(height: 8),
+                      _SettingsCard(
+                        items: [
+                          _SettingsTile(
+                            icon: Icons.help_outline_rounded,
+                            label: 'Help & Support',
+                            onTap: () {
+                              // TODO: navigate to HelpScreen
+                            },
+                          ),
+                          _SettingsTile(
+                            icon: Icons.info_outline_rounded,
+                            label: 'Terms and Policies',
+                            onTap: () {
+                              // TODO: navigate to TermsScreen
+                            },
+                          ),
+                          _SettingsTile(
+                            icon: Icons.language_rounded,
+                            label: 'Visit our Website',
+                            onTap: () {
+                              // TODO: launch URL
+                            },
+                            showDivider: false,
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // ── APP SETTINGS ────────────────────────────────────
+                      // SHARED — identical for verified & unverified users.
+                      const _SectionHeader(label: 'App settings'),
+                      const SizedBox(height: 8),
+                      _SettingsCard(
+                        items: [
+                          _SettingsTile(
+                            icon: Icons.dark_mode_outlined,
+                            label: 'Light theme/ Dark theme',
+                            trailing: Switch(
+                              value: _isDarkTheme,
+                              onChanged: (val) =>
+                                  setState(() => _isDarkTheme = val),
+                              activeColor: Colors.white,
+                              activeTrackColor: AppColors.primaryRed,
+                              inactiveThumbColor: Colors.white,
+                              inactiveTrackColor: AppColors.borderGrey,
+                              thumbColor:
+                                  WidgetStateProperty.all(Colors.white),
+                            ),
+                            onTap: () =>
+                                setState(() => _isDarkTheme = !_isDarkTheme),
+                          ),
+                          _SettingsTile(
+                            icon: Icons.translate_rounded,
+                            label: 'App language',
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _selectedLanguage,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    color: AppColors.textGrey,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: AppColors.textGrey,
+                                  size: 20,
+                                ),
+                              ],
+                            ),
+                            onTap: _showLanguagePicker,
+                            showDivider: false,
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // ── ACTIONS ─────────────────────────────────────────
+                      const _SectionHeader(label: 'Actions'),
+                      const SizedBox(height: 8),
+                      _SettingsCard(items: actionTiles),
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -706,7 +748,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _SettingsCard extends StatelessWidget {
-  final List<_SettingsTile> items;
+  final List<Widget> items;
 
   const _SettingsCard({required this.items});
 

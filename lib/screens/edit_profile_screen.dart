@@ -5,20 +5,27 @@
 //  • Circular avatar with camera-icon overlay; tapping opens image picker
 //    (gallery or camera). Falls back to a person icon when no image is set.
 //  • Editable: First Name, Last Name, Date of Birth (bottom-sheet date picker)
-//  • Read-only display: My Roles (with icons), Rescue Counter,
-//    My Certificates, My Ratings (star row + count)
-//  • "Save changes" primary button at the bottom
-//  • Fully scrollable, matches the Figma design exactly
+//  • VERIFIED users additionally see (read-only): My Roles, Rescue Counter,
+//    My Certificates, My Ratings, plus a "Save changes" button.
+//  • UNVERIFIED users see the shared VerificationPromptCard instead of the
+//    block above — no roles/rescue/certificates/ratings/save button, matching
+//    the Figma "unverified" variant.
+//  • Avatar + First Name + Last Name + Date of Birth are IDENTICAL code for
+//    both verified and unverified users (rendered once, above the branch) —
+//    per spec, shared components must not diverge between the two states.
+//  • Fully scrollable, matches the Figma design exactly.
 
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
+import '../widgets/verification_prompt_card.dart';
+import '../services/verification_status.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Simple value objects / mock data
-// (Replace with real user model / Qubit state when backend is wired)
+// (Replace with real user model / Qubit state when backend is wired up.)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _UserRole {
@@ -158,7 +165,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (picked != null) setState(() => _dob = picked);
   }
 
-  // ── Save ───────────────────────────────────────────────────────────────────
+  // ── Save (verified users only) ────────────────────────────────────────────
   Future<void> _save() async {
     setState(() => _isSaving = true);
     // TODO: call Qubit / backend save API
@@ -225,12 +232,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Avatar ───────────────────────────────────────────────
+                    // ── Avatar ─────────────────────────────────────────────
+                    // SHARED — identical for verified & unverified users.
                     Center(
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          // Circle avatar
                           Container(
                             width: 110,
                             height: 110,
@@ -257,8 +264,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                     ),
                             ),
                           ),
-
-                          // Camera badge
                           Positioned(
                             bottom: 2,
                             right: 2,
@@ -287,21 +292,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                     const SizedBox(height: 28),
 
-                    // ── First Name ───────────────────────────────────────────
+                    // ── First Name ─────────────────────────────────────────
+                    // SHARED
                     _FieldLabel('First Name'),
                     const SizedBox(height: 8),
                     _EditableField(controller: _firstNameController),
 
                     const SizedBox(height: 20),
 
-                    // ── Last Name ────────────────────────────────────────────
+                    // ── Last Name ──────────────────────────────────────────
+                    // SHARED
                     _FieldLabel('Last Name'),
                     const SizedBox(height: 8),
                     _EditableField(controller: _lastNameController),
 
                     const SizedBox(height: 20),
 
-                    // ── Date of Birth ────────────────────────────────────────
+                    // ── Date of Birth ──────────────────────────────────────
+                    // SHARED
                     _FieldLabel('Date of Birth'),
                     const SizedBox(height: 8),
                     GestureDetector(
@@ -327,96 +335,115 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                     const SizedBox(height: 20),
 
-                    // ── My Roles ─────────────────────────────────────────────
-                    _FieldLabel('My Roles'),
-                    const SizedBox(height: 8),
-                    _ReadOnlyField(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: _mockRoles
-                            .map(
-                              (r) => Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  children: [
-                                    Icon(r.icon,
-                                        size: 20,
-                                        color: AppColors.textDark),
-                                    const SizedBox(width: 10),
-                                    Text(
-                                      r.label,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        color: AppColors.textDark,
+                    // ── Below this point content diverges by verification
+                    //    status. Everything above is rendered once and is
+                    //    therefore guaranteed identical between states.
+                    ValueListenableBuilder<bool>(
+                      valueListenable: VerificationStatus.instance.isVerified,
+                      builder: (context, isVerified, _) {
+                        if (!isVerified) {
+                          // ── Unverified: verification prompt only ───────
+                          return const Padding(
+                            padding: EdgeInsets.only(top: 12),
+                            child: VerificationPromptCard(),
+                          );
+                        }
+
+                        // ── Verified: full read-only profile info + Save ──
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _FieldLabel('My Roles'),
+                            const SizedBox(height: 8),
+                            _ReadOnlyField(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: _mockRoles
+                                    .map(
+                                      (r) => Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 4),
+                                        child: Row(
+                                          children: [
+                                            Icon(r.icon,
+                                                size: 20,
+                                                color: AppColors.textDark),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              r.label,
+                                              style: const TextStyle(
+                                                fontSize: 15,
+                                                color: AppColors.textDark,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    )
+                                    .toList(),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            _FieldLabel('Rescue Counter'),
+                            const SizedBox(height: 8),
+                            _ReadOnlyField(
+                              child: Text(
+                                '$_mockRescueCounter',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: AppColors.textDark,
                                 ),
                               ),
-                            )
-                            .toList(),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // ── Rescue Counter ────────────────────────────────────────
-                    _FieldLabel('Rescue Counter'),
-                    const SizedBox(height: 8),
-                    _ReadOnlyField(
-                      child: Text(
-                        '$_mockRescueCounter',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // ── My certificates ───────────────────────────────────────
-                    _FieldLabel('My certificates'),
-                    const SizedBox(height: 8),
-                    _ReadOnlyField(
-                      child: Text(
-                        _mockCertificates,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: AppColors.hintGrey,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // ── My ratings ────────────────────────────────────────────
-                    _FieldLabel('My ratings'),
-                    const SizedBox(height: 8),
-                    _ReadOnlyField(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _StarRow(rating: _mockRating),
-                          Text(
-                            '$_mockRatingCount ratings',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: AppColors.textGrey,
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
 
-                    const SizedBox(height: 36),
+                            const SizedBox(height: 20),
 
-                    // ── Save button ───────────────────────────────────────────
-                    PrimaryButton(
-                      label: 'Save changes',
-                      onPressed: _save,
-                      isLoading: _isSaving,
+                            _FieldLabel('My certificates'),
+                            const SizedBox(height: 8),
+                            _ReadOnlyField(
+                              child: Text(
+                                _mockCertificates,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  color: AppColors.hintGrey,
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            _FieldLabel('My ratings'),
+                            const SizedBox(height: 8),
+                            _ReadOnlyField(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  _StarRow(rating: _mockRating),
+                                  Text(
+                                    '$_mockRatingCount ratings',
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.textGrey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 36),
+
+                            PrimaryButton(
+                              label: 'Save changes',
+                              onPressed: _save,
+                              isLoading: _isSaving,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -437,7 +464,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Private helper widgets
+// Private helper widgets — SHARED, unchanged between verified/unverified.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Bold field label (e.g. "First Name").
