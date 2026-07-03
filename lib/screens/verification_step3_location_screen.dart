@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_step_indicator.dart';
+import '../widgets/location_map_picker.dart';
 import 'verification_pending_screen.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -81,13 +82,12 @@ class VerificationStep3LocationScreen extends StatelessWidget {
 
               const Spacer(flex: 4),
 
-              // Allow button → navigates to the map / address picker
+              // Allow button → navigates to the map / address picker.
+              // The actual OS permission prompt now happens inside
+              // LocationMapPicker as soon as that screen mounts.
               PrimaryButton(
                 label: 'Allow',
                 onPressed: () {
-                  // TODO: request real location permission here via
-                  // permission_handler or geolocator package, then
-                  // navigate on success.
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -107,7 +107,7 @@ class VerificationStep3LocationScreen extends StatelessWidget {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Step 3 — Select Location (Image 9)
-// Search bar + map placeholder + editable address fields.
+// Search bar + real interactive map + editable address fields.
 // ════════════════════════════════════════════════════════════════════════════
 
 class VerificationSelectLocationScreen extends StatefulWidget {
@@ -121,11 +121,14 @@ class VerificationSelectLocationScreen extends StatefulWidget {
 class _VerificationSelectLocationScreenState
     extends State<VerificationSelectLocationScreen> {
   final _searchController = TextEditingController();
-  final _streetController =
-      TextEditingController(text: 'Kothrud'); // pre-filled from GPS
-  final _cityController = TextEditingController(text: 'Pune');
-  final _postalController = TextEditingController(text: '411038');
+  final _streetController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _postalController = TextEditingController();
   final _extraController = TextEditingController();
+
+  // Lets us call methods (searchAddress) on the map widget from outside,
+  // e.g. from the search bar's submit handler.
+  final _mapKey = GlobalKey<LocationMapPickerState>();
 
   String get _formattedAddress =>
       '${_streetController.text}, ${_cityController.text}, ${_postalController.text}';
@@ -185,11 +188,18 @@ class _VerificationSelectLocationScreenState
                     TextField(
                       controller: _searchController,
                       style: AppTextStyles.inputText,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (value) =>
+                          _mapKey.currentState?.searchAddress(value),
                       decoration: InputDecoration(
                         hintText: 'Search Address',
                         hintStyle: AppTextStyles.hint,
-                        prefixIcon: const Icon(Icons.search,
-                            color: AppColors.hintGrey, size: 20),
+                        prefixIcon: GestureDetector(
+                          onTap: () => _mapKey.currentState
+                              ?.searchAddress(_searchController.text),
+                          child: const Icon(Icons.search,
+                              color: AppColors.hintGrey, size: 20),
+                        ),
                         filled: true,
                         fillColor: AppColors.background,
                         contentPadding: const EdgeInsets.symmetric(
@@ -213,61 +223,20 @@ class _VerificationSelectLocationScreenState
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Map placeholder ──────────────────────────────────
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Stack(
-                        children: [
-                          // Static map image (replace with real map widget)
-                          Container(
-                            width: double.infinity,
-                            height: 160,
-                            color: const Color(0xFFE8E8E8),
-                            child: const _MapPlaceholder(),
-                          ),
-                          // "Track my location" button overlay
-                          Positioned(
-                            bottom: 8,
-                            right: 8,
-                            child: GestureDetector(
-                              onTap: () {
-                                // TODO: re-centre map on current GPS position
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.12),
-                                      blurRadius: 4,
-                                    ),
-                                  ],
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.my_location,
-                                        size: 16,
-                                        color: AppColors.primaryRed),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'Track my location',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.primaryRed,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    // ── Real interactive map ─────────────────────────────
+                    // Shows GPS position on load, lets the user tap to drop
+                    // the pin elsewhere, and reverse-geocodes into the
+                    // fields below via onLocationPicked.
+                    LocationMapPicker(
+                      key: _mapKey,
+                      height: 160,
+                      onLocationPicked: (loc) {
+                        setState(() {
+                          _streetController.text = loc.area;
+                          _cityController.text = loc.city;
+                          _postalController.text = loc.postalCode;
+                        });
+                      },
                     ),
                     const SizedBox(height: 10),
 
@@ -277,9 +246,18 @@ class _VerificationSelectLocationScreenState
                         const Icon(Icons.location_on_outlined,
                             size: 18, color: AppColors.textGrey),
                         const SizedBox(width: 6),
-                        Text(
-                          _formattedAddress,
-                          style: AppTextStyles.subtitle,
+                        Expanded(
+                          child: AnimatedBuilder(
+                            animation: Listenable.merge([
+                              _streetController,
+                              _cityController,
+                              _postalController,
+                            ]),
+                            builder: (context, _) => Text(
+                              _formattedAddress,
+                              style: AppTextStyles.subtitle,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -498,71 +476,4 @@ class VerificationConfirmLocationScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// Simple map placeholder (replace with google_maps_flutter widget)
-// ════════════════════════════════════════════════════════════════════════════
-
-class _MapPlaceholder extends StatelessWidget {
-  const _MapPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        // Grey tiled background
-        Container(color: const Color(0xFFD9D9D9)),
-
-        // Road lines
-        CustomPaint(
-          size: const Size(double.infinity, 160),
-          painter: _RoadPainter(),
-        ),
-
-        // "You are here" pin
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black87,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'You are here',
-                  style: TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Icon(Icons.location_on,
-                  color: AppColors.primaryRed, size: 28),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RoadPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white
-      ..strokeWidth = 18
-      ..style = PaintingStyle.stroke;
-    // Horizontal road
-    canvas.drawLine(
-        Offset(0, size.height * 0.6), Offset(size.width, size.height * 0.6), paint);
-    // Vertical road
-    canvas.drawLine(
-        Offset(size.width * 0.3, 0), Offset(size.width * 0.3, size.height), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

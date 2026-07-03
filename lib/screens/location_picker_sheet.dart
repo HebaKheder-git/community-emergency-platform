@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
+import '../widgets/location_map_picker.dart';
 
 /// Simple value object for the address pieces edited in the sheet.
 class EmergencyLocation {
@@ -30,7 +31,7 @@ class EmergencyLocation {
 }
 
 /// Draggable bottom sheet matching the "Select Location" Figma screen:
-/// search bar, static map preview with a "You are here" marker + "Track my
+/// search bar, real interactive map with a "You are here" marker + "Track my
 /// location" pill, current address line, and 3 editable address fields.
 ///
 /// Call [showLocationPickerSheet] to present it; it returns the confirmed
@@ -62,6 +63,10 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
   late final TextEditingController _cityController;
   late final TextEditingController _postalController;
 
+  // Lets us call methods (searchAddress, track-my-location) on the map
+  // widget from outside, e.g. from the search bar's submit handler.
+  final _mapKey = GlobalKey<LocationMapPickerState>();
+
   @override
   void initState() {
     super.initState();
@@ -78,12 +83,6 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
     _cityController.dispose();
     _postalController.dispose();
     super.dispose();
-  }
-
-  void _trackMyLocation() {
-    // TODO: integrate `geolocator` (or similar) to fetch the device's
-    // current coordinates and reverse-geocode them into area/city/postal.
-    // Stubbed for now so the UI flow is complete and ready to wire up.
   }
 
   void _confirm() {
@@ -162,11 +161,18 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                 TextField(
                   controller: _searchController,
                   style: AppTextStyles.inputText,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (value) =>
+                      _mapKey.currentState?.searchAddress(value),
                   decoration: InputDecoration(
                     hintText: 'Search Address',
                     hintStyle: AppTextStyles.hint,
-                    prefixIcon:
-                        const Icon(Icons.search, color: AppColors.hintGrey),
+                    prefixIcon: GestureDetector(
+                      onTap: () => _mapKey.currentState
+                          ?.searchAddress(_searchController.text),
+                      child: const Icon(Icons.search,
+                          color: AppColors.hintGrey),
+                    ),
                     filled: true,
                     fillColor: Colors.white,
                     contentPadding:
@@ -187,126 +193,18 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                 ),
                 const SizedBox(height: 16),
 
-                // Map preview (static placeholder — swap for
-                // google_maps_flutter / mapbox once a maps key is available)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    height: 190,
-                    width: double.infinity,
-                    color: const Color(0xFFE3E6E8),
-                    child: Stack(
-                      children: [
-                        // Faux road
-                        Positioned(
-                          left: -40,
-                          top: -20,
-                          child: Transform.rotate(
-                            angle: -0.55,
-                            child: Container(
-                              width: 320,
-                              height: 36,
-                              color: const Color(0xFFF3D27A),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 16,
-                          bottom: 16,
-                          child: Container(
-                            width: 60,
-                            height: 60,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFCFE8D2),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                        // "You are here" marker
-                        Positioned.fill(
-                          child: Align(
-                            alignment: const Alignment(0.15, -0.2),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.textDark,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text(
-                                    'You are here',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  width: 38,
-                                  height: 38,
-                                  margin: const EdgeInsets.only(top: 2),
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFFF08A3C),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.restaurant,
-                                    color: Colors.white,
-                                    size: 18,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 24,
-                          top: 6,
-                          child: Icon(Icons.location_on,
-                              color: AppColors.primaryRed, size: 22),
-                        ),
-                        // Track my location pill
-                        Positioned(
-                          right: 12,
-                          bottom: 12,
-                          child: GestureDetector(
-                            onTap: _trackMyLocation,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x1F000000),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.my_location,
-                                      color: AppColors.primaryRed, size: 16),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Track my location',
-                                    style: AppTextStyles.linkRed
-                                        .copyWith(fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                // Real interactive map — shows GPS position, tap to drop
+                // pin elsewhere, reverse-geocodes into the fields below.
+                LocationMapPicker(
+                  key: _mapKey,
+                  height: 190,
+                  onLocationPicked: (loc) {
+                    setState(() {
+                      _areaController.text = loc.area;
+                      _cityController.text = loc.city;
+                      _postalController.text = loc.postalCode;
+                    });
+                  },
                 ),
                 const SizedBox(height: 16),
 
