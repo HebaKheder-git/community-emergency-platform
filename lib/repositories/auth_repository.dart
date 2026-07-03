@@ -1,5 +1,6 @@
 import '../core/api_client.dart';
 import '../core/token_storage.dart';
+import '../models/me_result.dart';
 
 /// One method per request in the Postman collection's "Auth" folder.
 ///
@@ -48,25 +49,28 @@ class AuthRepository {
 
   /// POST /auth/verify-code — confirms the sign-up OTP.
   /// Returns the final auth `token` and persists it.
-  Future<String> verifyRegistrationCode({
+  /// POST /auth/verify-code — confirms the sign-up OTP.
+/// temp_token now goes in a custom header, NOT the body.
+Future<String> verifyRegistrationCode({
     required String verificationCode,
     required String tempToken,
   }) async {
-    final res = await _api.post('/auth/verify-code', body: {
-      'verification_code': verificationCode,
-      'temp_token': tempToken,
-    });
+    final res = await _api.post(
+      '/auth/verify-code',
+      body: {'verification_code': verificationCode},
+      headers: {'temp_token': tempToken},
+    );
     final token = res['token'] as String;
     await _tokenStorage.saveAuthToken(token);
     await _tokenStorage.clearTempToken();
     return token;
   }
 
-  /// POST /auth/resend — reused by both the sign-up OTP screen and the
-  /// password-reset OTP screen, since both just need a temp_token.
+  /// POST /auth/resend — temp_token now goes in a custom header, no body.
   Future<void> resendOtp({required String tempToken}) async {
-    await _api.post('/auth/resend', body: {'temp_token': tempToken});
+    await _api.post('/auth/resend', headers: {'temp_token': tempToken});
   }
+
 
   // ── Login / logout ────────────────────────────────────────────────────
 
@@ -134,5 +138,34 @@ class AuthRepository {
     final token = res['token'] as String;
     await _tokenStorage.saveAuthToken(token);
     return token;
+  }
+
+  // ── Profile / roles ────────────────────────────────────────────────────
+
+/// GET /auth/me — the endpoint that didn't exist before. Use this both to
+/// validate a locally-stored token on app start, and to get real
+/// name/email/roles instead of the TokenStorage-cached stopgap values.
+  Future<MeResult> getMe() async {
+    final res = await _api.get('/auth/me');
+    final user = res['user'] as Map<String, dynamic>;
+    final roles = (res['roles'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList();
+    final permissions = (res['permissions'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList();
+
+    await _tokenStorage.saveProfile(
+      email: user['email'] as String,
+      name: user['name'] as String?,
+    );
+
+    return MeResult(
+      id: user['id'] as int,
+      name: user['name'] as String?,
+      email: user['email'] as String,
+      roles: roles,
+      permissions: permissions,
+    );
   }
 }

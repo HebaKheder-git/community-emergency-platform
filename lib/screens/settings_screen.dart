@@ -39,6 +39,7 @@ import 'reset_password_email_otp_screen.dart';
 import 'reset_password_phone_screen.dart';
 import 'account_verification_intro_screen.dart';
 import 'login_screen.dart';
+import '../repositories/auth_repository.dart';
 
 class SettingsScreen extends StatefulWidget {
   final int selectedNavIndex;
@@ -65,24 +66,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // /auth/register is email-only right now, this is effectively always
   // true — kept as a field so it's a one-line change once phone accounts
   // exist on the backend.
-  bool _userSignedUpWithEmail = true;
+  final bool _userSignedUpWithEmail = true;
   String _userEmail = '';
   final _tokenStorage = TokenStorage();
 
   // ── App settings ───────────────────────────────────────────────────────────
   bool _isDarkTheme = false;
   String _selectedLanguage = 'English';
-
+  final AuthRepository _authRepository = AuthRepository();
+  List<String> _roles = [];
   @override
   void initState() {
     super.initState();
-    _loadCachedProfile();
+    _loadProfile();
   }
 
-  Future<void> _loadCachedProfile() async {
-    final email = await _tokenStorage.readEmail();
-    if (mounted && email != null) {
-      setState(() => _userEmail = email);
+  Future<void> _loadProfile() async {
+    // Fast local fallback so the UI isn't blank while the request is in flight.
+    final cachedEmail = await _tokenStorage.readEmail();
+    if (mounted && cachedEmail != null) {
+      setState(() => _userEmail = cachedEmail);
+    }
+
+    try {
+      final me = await _authRepository.getMe();
+      if (!mounted) return;
+      setState(() {
+        _userEmail = me.email;
+        _roles = me.roles;
+      });
+    } catch (_) {
+      // Offline or token issue — keep showing the cached value.
     }
   }
 

@@ -43,8 +43,13 @@ class ApiClient {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
+    Map<String, dynamic>? headers,
   }) =>
-      _send(() => _dio.post(path, data: body));
+      _send(() => _dio.post(
+            path,
+            data: body,
+            options: headers != null ? Options(headers: headers) : null,
+          ));
 
   Future<Map<String, dynamic>> get(String path) => _send(() => _dio.get(path));
 

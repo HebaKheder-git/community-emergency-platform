@@ -91,4 +91,17 @@ class AuthCubit extends Cubit<AuthState> {
       emit(const AuthState(status: AuthStatus.loggedOut));
     }
   }
+  Future<void> fetchMe() async {
+    emit(state.copyWith(status: AuthStatus.loading));
+    try {
+      final me = await _repository.getMe();
+      emit(state.copyWith(
+        status: AuthStatus.profileLoaded,
+        roles: me.roles,
+        permissions: me.permissions,
+      ));
+    } on ApiException catch (e) {
+      emit(state.copyWith(status: AuthStatus.failure, errorMessage: e.message));
+    }
+  }
 }

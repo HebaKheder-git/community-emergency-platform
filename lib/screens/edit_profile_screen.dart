@@ -22,22 +22,23 @@ import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_prompt_card.dart';
 import '../services/verification_status.dart';
+import '../repositories/auth_repository.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Simple value objects / mock data
 // (Replace with real user model / Qubit state when backend is wired up.)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _UserRole {
-  final IconData icon;
-  final String label;
-  const _UserRole(this.icon, this.label);
-}
+//class _UserRole {
+//  final IconData icon;
+//  final String label;
+//  const _UserRole(this.icon, this.label);
+//}
 
-const List<_UserRole> _mockRoles = [
-  _UserRole(Icons.medical_services_outlined, 'Rescuer'),
-  _UserRole(Icons.article_outlined, 'Article publisher'),
-];
+//const List<_UserRole> _mockRoles = [
+//  _UserRole(Icons.medical_services_outlined, 'Rescuer'),
+//  _UserRole(Icons.article_outlined, 'Article publisher'),
+//];
 
 const int _mockRescueCounter = 17;
 const String _mockCertificates = 'None';
@@ -62,8 +63,56 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _lastNameController = TextEditingController(text: 'Peters');
   DateTime _dob = DateTime(1995, 5, 23);
   bool _isSaving = false;
+  final _authRepository = AuthRepository();
+  List<String> _roles = [];
 
-  // ── Image picker ───────────────────────────────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  // Loads real name + roles from GET /auth/me. DOB, avatar, rescue counter,
+  // certificates and ratings stay as placeholders until the Profile folder
+  // endpoints exist — there's nowhere to fetch/save them yet.
+  Future<void> _loadProfile() async {
+    try {
+      final me = await _authRepository.getMe();
+      if (!mounted) return;
+      final parts = me.name?.trim().split(RegExp(r'\s+')) ?? [];
+      setState(() {
+        _firstNameController.text = parts.isNotEmpty ? parts.first : '';
+        _lastNameController.text =
+            parts.length > 1 ? parts.sublist(1).join(' ') : '';
+        _roles = me.roles;
+      });
+    } catch (_) {
+      // Offline or token issue — leave the placeholder defaults in the fields.
+    }
+  }
+
+  IconData _iconForRole(String role) {
+    switch (role) {
+      case 'rescuer':
+        return Icons.medical_services_outlined;
+      case 'trusted':
+        return Icons.verified_user_outlined;
+      default:
+        return Icons.badge_outlined;
+    }
+  }
+
+  String _labelForRole(String role) {
+    switch (role) {
+      case 'rescuer':
+        return 'Rescuer';
+      case 'trusted':
+        return 'Trusted member';
+      default:
+        return role[0].toUpperCase() + role.substring(1);
+    }
+  }
+  // ── Image picker ──────────────────────────────────────────────────────────
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     showModalBottomSheet(
@@ -359,29 +408,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               child: Column(
                                 crossAxisAlignment:
                                     CrossAxisAlignment.start,
-                                children: _mockRoles
-                                    .map(
-                                      (r) => Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 4),
-                                        child: Row(
-                                          children: [
-                                            Icon(r.icon,
-                                                size: 20,
-                                                color: AppColors.textDark),
-                                            const SizedBox(width: 10),
-                                            Text(
-                                              r.label,
-                                              style: const TextStyle(
-                                                fontSize: 15,
-                                                color: AppColors.textDark,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                children: _roles
+                                  .map(
+                                    (role) => Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(_iconForRole(role), size: 20, color: AppColors.textDark),
+                                          const SizedBox(width: 10),
+                                          Text(_labelForRole(role),
+                                              style: const TextStyle(fontSize: 15, color: AppColors.textDark)),
+                                        ],
                                       ),
-                                    )
-                                    .toList(),
+                                    ),
+                                  )
+                                  .toList(),
                               ),
                             ),
 
