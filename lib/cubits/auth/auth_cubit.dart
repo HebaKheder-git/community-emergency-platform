@@ -1,16 +1,19 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/api_exception.dart';
 import '../../repositories/auth_repository.dart';
+import '../../repositories/profile_repository.dart';
 import 'auth_state.dart';
 
 /// Drives SignUpScreen, OtpVerificationScreen (register flow), LoginScreen
 /// and the "Log out" action in SettingsScreen.
 class AuthCubit extends Cubit<AuthState> {
-  AuthCubit({AuthRepository? repository})
+  AuthCubit({AuthRepository? repository, ProfileRepository? profileRepository})
       : _repository = repository ?? AuthRepository(),
+        _profileRepository = profileRepository ?? ProfileRepository(),
         super(const AuthState());
 
   final AuthRepository _repository;
+  final ProfileRepository _profileRepository;
 
   Future<void> register({
     required String name,
@@ -52,6 +55,16 @@ class AuthCubit extends Cubit<AuthState> {
         verificationCode: code,
         tempToken: tempToken,
       );
+
+      // There is no "create profile" screen in this app, and a profile can
+      // never be fully deleted — so every account gets an (empty) profile
+      // the instant it's created here. Failure is non-fatal: ProfileCubit
+      // .loadProfile() creates one on-demand later if this silently failed
+      // (e.g. the user lost connection at exactly this moment).
+      try {
+        await _profileRepository.createProfile();
+      } catch (_) {}
+
       emit(state.copyWith(status: AuthStatus.registerVerified));
     } on ApiException catch (e) {
       emit(state.copyWith(status: AuthStatus.failure, errorMessage: e.message));
@@ -91,6 +104,7 @@ class AuthCubit extends Cubit<AuthState> {
       emit(const AuthState(status: AuthStatus.loggedOut));
     }
   }
+
   Future<void> fetchMe() async {
     emit(state.copyWith(status: AuthStatus.loading));
     try {

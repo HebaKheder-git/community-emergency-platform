@@ -6,8 +6,8 @@ import 'token_storage.dart';
 /// Thin wrapper around [Dio] shared by every repository.
 ///
 ///  - Automatically attaches `Authorization: Bearer <token>` when a token
-///    exists in [TokenStorage] (needed for /auth/logout and, later, any
-///    endpoint behind auth).
+///    exists in [TokenStorage] (needed for /auth/logout and any endpoint
+///    behind auth, including all of /profile).
 ///  - Converts every failure into an [ApiException] so cubits never have to
 ///    know about Dio/HTTP details.
 class ApiClient {
@@ -56,8 +56,42 @@ class ApiClient {
   Future<Map<String, dynamic>> put(String path, {Map<String, dynamic>? body}) =>
       _send(() => _dio.put(path, data: body));
 
+  // NEW — Update Profile uses PATCH ("Supports PUT or PATCH" per the
+  // Postman description).
+  Future<Map<String, dynamic>> patch(String path, {Map<String, dynamic>? body}) =>
+      _send(() => _dio.patch(path, data: body));
+
   Future<Map<String, dynamic>> delete(String path) =>
       _send(() => _dio.delete(path));
+
+  // NEW — multipart POST, used by "Create Profile (with Avatar)".
+  // Overrides the default JSON content-type so Dio sets the correct
+  // multipart boundary header instead.
+  Future<Map<String, dynamic>> postMultipart(String path, FormData formData) =>
+      _send(() => _dio.post(
+            path,
+            data: formData,
+            options: Options(contentType: 'multipart/form-data'),
+          ));
+
+  // NEW — multipart "PATCH", used by Edit Profile when replacing the
+  // avatar together with other fields.
+  //
+  // ASSUMPTION: sent as POST with Laravel's `_method` field spoofing
+  // PATCH, because PHP does not populate file uploads for a literal
+  // PUT/PATCH request carrying multipart/form-data — this is the standard
+  // Laravel workaround for "update with file upload". Please confirm with
+  // Yosef that /profile expects this convention. If the backend actually
+  // parses multipart on a literal PATCH request, change `_dio.post` below
+  // to `_dio.patch` and drop the `_method` field.
+  Future<Map<String, dynamic>> patchMultipart(String path, FormData formData) {
+    formData.fields.add(const MapEntry('_method', 'PATCH'));
+    return _send(() => _dio.post(
+          path,
+          data: formData,
+          options: Options(contentType: 'multipart/form-data'),
+        ));
+  }
 
   Future<Map<String, dynamic>> _send(
     Future<Response> Function() request,

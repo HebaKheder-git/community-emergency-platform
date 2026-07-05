@@ -1,53 +1,47 @@
 // lib/screens/edit_profile_screen.dart
 //
 // Edit Profile screen — shown when "Edit profile" is tapped in SettingsScreen.
-// Features:
-//  • Circular avatar with camera-icon overlay; tapping opens image picker
-//    (gallery or camera). Falls back to a person icon when no image is set.
-//  • Editable: First Name, Last Name, Date of Birth (bottom-sheet date picker)
-//  • VERIFIED users additionally see (read-only): My Roles, Rescue Counter,
-//    My Certificates, My Ratings, plus a "Save changes" button.
-//  • UNVERIFIED users see the shared VerificationPromptCard instead of the
-//    block above — no roles/rescue/certificates/ratings/save button, matching
-//    the Figma "unverified" variant.
-//  • Avatar + First Name + Last Name + Date of Birth are IDENTICAL code for
-//    both verified and unverified users (rendered once, above the branch) —
-//    per spec, shared components must not diverge between the two states.
-//  • Fully scrollable, matches the Figma design exactly.
+//
+// LINKED TO: GET / POST / PATCH /profile via ProfileCubit + ProfileRepository.
+//
+// Shared fields (identical for verified & unverified users, per spec):
+//   • Avatar              — upload via image picker, sent as multipart.
+//   • First Name/Last Name — READ-ONLY. There is no backend endpoint to
+//     update the account's name (only /auth/register sets it once), so
+//     these are display-only until such an endpoint exists. Flagged for
+//     Yosef — see the linking notes sent alongside this file.
+//   • Date of Birth       → profile.birth_date
+//   • Phone               → profile.phone (created empty at sign-up,
+//                            filled in here per the scenario Q&A)
+//   • Gender              → profile.gender             (NEW, per Q&A)
+//   • Bio                 → profile.bio                (NEW, per Q&A)
+//   • Location privacy    → profile.is_location_public (NEW, per Q&A)
+//
+// VERIFIED users additionally see (read-only): My Roles, Rescue Counter,
+// My Certificates, My Ratings — certificates/ratings are still mocked,
+// there's no backend data for those in this collection yet.
+// UNVERIFIED users see the shared VerificationPromptCard instead.
+//
+// "Save changes" is now shared and shown to everyone (not just verified
+// users), since the fields it saves (phone/gender/bio/DOB/location/avatar)
+// apply to every account, verified or not.
 
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_prompt_card.dart';
 import '../services/verification_status.dart';
-import '../repositories/auth_repository.dart';
+import '../cubits/profile/profile_cubit.dart';
+import '../cubits/profile/profile_state.dart';
+import '../models/profile.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Simple value objects / mock data
-// (Replace with real user model / Qubit state when backend is wired up.)
-// ─────────────────────────────────────────────────────────────────────────────
-
-//class _UserRole {
-//  final IconData icon;
-//  final String label;
-//  const _UserRole(this.icon, this.label);
-//}
-
-//const List<_UserRole> _mockRoles = [
-//  _UserRole(Icons.medical_services_outlined, 'Rescuer'),
-//  _UserRole(Icons.article_outlined, 'Article publisher'),
-//];
-
-const int _mockRescueCounter = 17;
+// Certificates & ratings have no backend endpoint yet — still mocked.
 const String _mockCertificates = 'None';
 const double _mockRating = 3.5; // out of 5
 const int _mockRatingCount = 19;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Screen
-// ─────────────────────────────────────────────────────────────────────────────
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -57,38 +51,55 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  // ── State ──────────────────────────────────────────────────────────────────
-  File? _avatarFile; // null = no photo yet → show icon
-  final _firstNameController = TextEditingController(text: 'Melissa');
-  final _lastNameController = TextEditingController(text: 'Peters');
-  DateTime _dob = DateTime(1995, 5, 23);
-  bool _isSaving = false;
-  final _authRepository = AuthRepository();
+  late final ProfileCubit _profileCubit;
+  bool _hydrated = false; // guards against overwriting user edits on rebuild
+
+  File? _avatarFile;
+  String? _existingAvatarUrl;
+
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _bioController = TextEditingController();
+
+  DateTime _dob = DateTime(2000, 1, 1);
+  String? _gender;
+  bool _isLocationPublic = false;
+
   List<String> _roles = [];
+  int _rescueCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    _profileCubit = ProfileCubit()..loadProfile();
   }
 
-  // Loads real name + roles from GET /auth/me. DOB, avatar, rescue counter,
-  // certificates and ratings stay as placeholders until the Profile folder
-  // endpoints exist — there's nowhere to fetch/save them yet.
-  Future<void> _loadProfile() async {
-    try {
-      final me = await _authRepository.getMe();
-      if (!mounted) return;
-      final parts = me.name?.trim().split(RegExp(r'\s+')) ?? [];
-      setState(() {
-        _firstNameController.text = parts.isNotEmpty ? parts.first : '';
-        _lastNameController.text =
-            parts.length > 1 ? parts.sublist(1).join(' ') : '';
-        _roles = me.roles;
-      });
-    } catch (_) {
-      // Offline or token issue — leave the placeholder defaults in the fields.
-    }
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _phoneController.dispose();
+    _bioController.dispose();
+    _profileCubit.close();
+    super.dispose();
+  }
+
+  // Populates local editable state from the fetched profile — only once
+  // on initial load, so it doesn't stomp on edits the user is mid-typing.
+  // Re-runs after a successful save to reflect the server's saved truth.
+  void _hydrateFrom(ProfileModel profile) {
+    final parts = profile.name?.trim().split(RegExp(r'\s+')) ?? [];
+    _firstNameController.text = parts.isNotEmpty ? parts.first : '';
+    _lastNameController.text = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+    _phoneController.text = profile.phone ?? '';
+    _bioController.text = profile.bio ?? '';
+    _gender = profile.gender;
+    _isLocationPublic = profile.isLocationPublic;
+    _dob = profile.birthDate ?? _dob;
+    _existingAvatarUrl = profile.avatarUrl;
+    _roles = profile.roles;
+    _rescueCount = profile.rescueCount ?? 0;
   }
 
   IconData _iconForRole(String role) {
@@ -109,9 +120,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       case 'trusted':
         return 'Trusted member';
       default:
-        return role[0].toUpperCase() + role.substring(1);
+        return role.isEmpty ? role : role[0].toUpperCase() + role.substring(1);
     }
   }
+
   // ── Image picker ──────────────────────────────────────────────────────────
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -144,43 +156,27 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 8),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined,
-                  color: AppColors.primaryRed),
+              leading: const Icon(Icons.photo_library_outlined, color: AppColors.primaryRed),
               title: const Text('Choose from gallery'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final picked = await picker.pickImage(
-                  source: ImageSource.gallery,
-                  imageQuality: 85,
-                );
-                if (picked != null) {
-                  setState(() => _avatarFile = File(picked.path));
-                }
+                final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+                if (picked != null) setState(() => _avatarFile = File(picked.path));
               },
             ),
             ListTile(
-              leading: const Icon(Icons.camera_alt_outlined,
-                  color: AppColors.primaryRed),
+              leading: const Icon(Icons.camera_alt_outlined, color: AppColors.primaryRed),
               title: const Text('Take a photo'),
               onTap: () async {
                 Navigator.pop(ctx);
-                final picked = await picker.pickImage(
-                  source: ImageSource.camera,
-                  imageQuality: 85,
-                );
-                if (picked != null) {
-                  setState(() => _avatarFile = File(picked.path));
-                }
+                final picked = await picker.pickImage(source: ImageSource.camera, imageQuality: 85);
+                if (picked != null) setState(() => _avatarFile = File(picked.path));
               },
             ),
             if (_avatarFile != null)
               ListTile(
-                leading: const Icon(Icons.delete_outline,
-                    color: AppColors.primaryRed),
-                title: const Text(
-                  'Remove photo',
-                  style: TextStyle(color: AppColors.primaryRed),
-                ),
+                leading: const Icon(Icons.delete_outline, color: AppColors.primaryRed),
+                title: const Text('Remove photo', style: TextStyle(color: AppColors.primaryRed)),
                 onTap: () {
                   Navigator.pop(ctx);
                   setState(() => _avatarFile = null);
@@ -214,301 +210,347 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (picked != null) setState(() => _dob = picked);
   }
 
-  // ── Save (verified users only) ────────────────────────────────────────────
-  Future<void> _save() async {
-    setState(() => _isSaving = true);
-    // TODO: call Qubit / backend save API
-    await Future.delayed(const Duration(seconds: 1));
-    if (!mounted) return;
-    setState(() => _isSaving = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Profile updated successfully'),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
+  // ── Save (everyone — see header note) ─────────────────────────────────────
+  void _save() {
+    _profileCubit.saveProfile(
+      phone: _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+      gender: _gender,
+      bio: _bioController.text.trim(),
+      birthDate: _dob,
+      isLocationPublic: _isLocationPublic,
+      avatar: _avatarFile,
     );
-    Navigator.pop(context);
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
   String get _formattedDob =>
-      '${_dob.day.toString().padLeft(2, '0')}/'
-      '${_dob.month.toString().padLeft(2, '0')}/'
-      '${_dob.year}';
+      '${_dob.day.toString().padLeft(2, '0')}/${_dob.month.toString().padLeft(2, '0')}/${_dob.year}';
 
-  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F2),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // ── App bar ──────────────────────────────────────────────────────
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: AppColors.textDark, size: 22),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const Text(
-                    'Edit Profile',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                ],
+    return BlocProvider.value(
+      value: _profileCubit,
+      child: BlocConsumer<ProfileCubit, ProfileState>(
+        listener: (context, state) {
+          if (state.status == ProfileStatus.loaded && state.profile != null && !_hydrated) {
+            _hydrated = true;
+            setState(() => _hydrateFrom(state.profile!));
+          } else if (state.status == ProfileStatus.saved && state.profile != null) {
+            setState(() {
+              _hydrateFrom(state.profile!);
+              _avatarFile = null;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('Profile updated successfully'),
+                backgroundColor: AppColors.success,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-            ),
+            );
+            Navigator.pop(context);
+          } else if (state.status == ProfileStatus.failure && state.errorMessage != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.errorMessage!)),
+            );
+          }
+        },
+        builder: (context, state) {
+          final isLoadingProfile =
+              (state.status == ProfileStatus.initial || state.status == ProfileStatus.loading) &&
+                  state.profile == null;
+          final isSaving = state.status == ProfileStatus.saving;
 
-            // ── Scrollable body ──────────────────────────────────────────────
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Avatar ─────────────────────────────────────────────
-                    // SHARED — identical for verified & unverified users.
-                    Center(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Container(
-                            width: 110,
-                            height: 110,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF3D3B8E),
-                                width: 2.5,
-                              ),
-                              color: const Color(0xFFE8E8E8),
-                            ),
-                            child: ClipOval(
-                              child: _avatarFile != null
-                                  ? Image.file(
-                                      _avatarFile!,
-                                      fit: BoxFit.cover,
-                                      width: 110,
-                                      height: 110,
-                                    )
-                                  : const Icon(
-                                      Icons.person_rounded,
-                                      size: 64,
-                                      color: AppColors.textGrey,
-                                    ),
-                            ),
+          return Scaffold(
+            backgroundColor: const Color(0xFFF2F2F2),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  // ── App bar ──────────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                                color: AppColors.textDark, size: 22),
+                            onPressed: () => Navigator.pop(context),
                           ),
-                          Positioned(
-                            bottom: 2,
-                            right: 2,
-                            child: GestureDetector(
-                              onTap: _pickImage,
-                              child: Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF3D3B8E),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: Colors.white, width: 2),
-                                ),
-                                child: const Icon(
-                                  Icons.camera_alt_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 28),
-
-                    // ── First Name ─────────────────────────────────────────
-                    // SHARED
-                    _FieldLabel('First Name'),
-                    const SizedBox(height: 8),
-                    _EditableField(controller: _firstNameController),
-
-                    const SizedBox(height: 20),
-
-                    // ── Last Name ──────────────────────────────────────────
-                    // SHARED
-                    _FieldLabel('Last Name'),
-                    const SizedBox(height: 8),
-                    _EditableField(controller: _lastNameController),
-
-                    const SizedBox(height: 20),
-
-                    // ── Date of Birth ──────────────────────────────────────
-                    // SHARED
-                    _FieldLabel('Date of Birth'),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: _pickDate,
-                      child: _ReadOnlyField(
-                        child: Row(
-                          mainAxisAlignment:
-                              MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              _formattedDob,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                            const Icon(Icons.keyboard_arrow_down_rounded,
-                                color: AppColors.textDark, size: 24),
-                          ],
                         ),
-                      ),
+                        const Text(
+                          'Edit Profile',
+                          style: TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.textDark),
+                        ),
+                      ],
                     ),
+                  ),
 
-                    const SizedBox(height: 20),
-
-                    // ── Below this point content diverges by verification
-                    //    status. Everything above is rendered once and is
-                    //    therefore guaranteed identical between states.
-                    ValueListenableBuilder<bool>(
-                      valueListenable: VerificationStatus.instance.isVerified,
-                      builder: (context, isVerified, _) {
-                        if (!isVerified) {
-                          // ── Unverified: verification prompt only ───────
-                          return const Padding(
-                            padding: EdgeInsets.only(top: 12),
-                            child: VerificationPromptCard(),
-                          );
-                        }
-
-                        // ── Verified: full read-only profile info + Save ──
-                        return Column(
+                  if (isLoadingProfile)
+                    const Expanded(child: Center(child: CircularProgressIndicator()))
+                  else
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _FieldLabel('My Roles'),
-                            const SizedBox(height: 8),
-                            _ReadOnlyField(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: _roles
-                                  .map(
-                                    (role) => Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 4),
-                                      child: Row(
-                                        children: [
-                                          Icon(_iconForRole(role), size: 20, color: AppColors.textDark),
-                                          const SizedBox(width: 10),
-                                          Text(_labelForRole(role),
-                                              style: const TextStyle(fontSize: 15, color: AppColors.textDark)),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                              ),
-                            ),
-
-                            const SizedBox(height: 20),
-
-                            _FieldLabel('Rescue Counter'),
-                            const SizedBox(height: 8),
-                            _ReadOnlyField(
-                              child: Text(
-                                '$_mockRescueCounter',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: AppColors.textDark,
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(height: 20),
-
-                            _FieldLabel('My certificates'),
-                            const SizedBox(height: 8),
-                            _ReadOnlyField(
-                              child: Text(
-                                _mockCertificates,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  color: AppColors.hintGrey,
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(height: 20),
-
-                            _FieldLabel('My ratings'),
-                            const SizedBox(height: 8),
-                            _ReadOnlyField(
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                            // ── Avatar ──────────────────────────── SHARED
+                            Center(
+                              child: Stack(
+                                clipBehavior: Clip.none,
                                 children: [
-                                  _StarRow(rating: _mockRating),
-                                  Text(
-                                    '$_mockRatingCount ratings',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      color: AppColors.textGrey,
+                                  Container(
+                                    width: 110,
+                                    height: 110,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: const Color(0xFF3D3B8E), width: 2.5),
+                                      color: const Color(0xFFE8E8E8),
+                                    ),
+                                    child: ClipOval(
+                                      child: _avatarFile != null
+                                          ? Image.file(_avatarFile!,
+                                              fit: BoxFit.cover, width: 110, height: 110)
+                                          : (_existingAvatarUrl != null
+                                              ? Image.network(
+                                                  _existingAvatarUrl!,
+                                                  fit: BoxFit.cover,
+                                                  width: 110,
+                                                  height: 110,
+                                                  errorBuilder: (_, __, ___) => const Icon(
+                                                    Icons.person_rounded,
+                                                    size: 64,
+                                                    color: AppColors.textGrey,
+                                                  ),
+                                                )
+                                              : const Icon(Icons.person_rounded,
+                                                  size: 64, color: AppColors.textGrey)),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 2,
+                                    right: 2,
+                                    child: GestureDetector(
+                                      onTap: _pickImage,
+                                      child: Container(
+                                        width: 34,
+                                        height: 34,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF3D3B8E),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(color: Colors.white, width: 2),
+                                        ),
+                                        child: const Icon(Icons.camera_alt_rounded,
+                                            color: Colors.white, size: 18),
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
 
+                            const SizedBox(height: 28),
+
+                            // ── First / Last Name ─────── SHARED, READ-ONLY
+                            _FieldLabel('First Name'),
+                            const SizedBox(height: 8),
+                            _ReadOnlyField(
+                              child: Text(_firstNameController.text.isEmpty
+                                  ? '—'
+                                  : _firstNameController.text),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            _FieldLabel('Last Name'),
+                            const SizedBox(height: 8),
+                            _ReadOnlyField(
+                              child: Text(
+                                  _lastNameController.text.isEmpty ? '—' : _lastNameController.text),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── Date of Birth ─────────────────────── SHARED
+                            _FieldLabel('Date of Birth'),
+                            const SizedBox(height: 8),
+                            GestureDetector(
+                              onTap: _pickDate,
+                              child: _ReadOnlyField(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(_formattedDob,
+                                        style: const TextStyle(fontSize: 16, color: AppColors.textDark)),
+                                    const Icon(Icons.keyboard_arrow_down_rounded,
+                                        color: AppColors.textDark, size: 24),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── Phone ────────────────────────── SHARED (NEW)
+                            _FieldLabel('Phone Number'),
+                            const SizedBox(height: 8),
+                            _EditableField(
+                              controller: _phoneController,
+                              hint: 'Add a phone number',
+                              keyboardType: TextInputType.phone,
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── Gender ───────────────────────── SHARED (NEW)
+                            _FieldLabel('Gender'),
+                            const SizedBox(height: 8),
+                            _GenderSelector(
+                              value: _gender,
+                              onChanged: (g) => setState(() => _gender = g),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── Bio ──────────────────────────── SHARED (NEW)
+                            _FieldLabel('Bio'),
+                            const SizedBox(height: 8),
+                            _EditableField(
+                              controller: _bioController,
+                              hint: 'Tell others about yourself',
+                              maxLines: 4,
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── Location privacy ────────────── SHARED (NEW)
+                            _ReadOnlyField(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Show my location to other users',
+                                      style: TextStyle(fontSize: 15, color: AppColors.textDark),
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: _isLocationPublic,
+                                    activeColor: AppColors.primaryRed,
+                                    onChanged: (v) => setState(() => _isLocationPublic = v),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // ── Below this point content diverges by
+                            //    verification status.
+                            ValueListenableBuilder<bool>(
+                              valueListenable: VerificationStatus.instance.isVerified,
+                              builder: (context, isVerified, _) {
+                                if (!isVerified) {
+                                  return const Padding(
+                                    padding: EdgeInsets.only(top: 12),
+                                    child: VerificationPromptCard(),
+                                  );
+                                }
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _FieldLabel('My Roles'),
+                                    const SizedBox(height: 8),
+                                    _ReadOnlyField(
+                                      child: _roles.isEmpty
+                                          ? const Text('No roles yet',
+                                              style: TextStyle(color: AppColors.hintGrey))
+                                          : Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: _roles
+                                                  .map(
+                                                    (role) => Padding(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(vertical: 4),
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(_iconForRole(role),
+                                                              size: 20, color: AppColors.textDark),
+                                                          const SizedBox(width: 10),
+                                                          Text(_labelForRole(role),
+                                                              style: const TextStyle(
+                                                                  fontSize: 15,
+                                                                  color: AppColors.textDark)),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  )
+                                                  .toList(),
+                                            ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _FieldLabel('Rescue Counter'),
+                                    const SizedBox(height: 8),
+                                    _ReadOnlyField(
+                                      child: Text('$_rescueCount',
+                                          style: const TextStyle(fontSize: 16, color: AppColors.textDark)),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _FieldLabel('My certificates'),
+                                    const SizedBox(height: 8),
+                                    _ReadOnlyField(
+                                      child: Text(_mockCertificates,
+                                          style: const TextStyle(fontSize: 16, color: AppColors.hintGrey)),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _FieldLabel('My ratings'),
+                                    const SizedBox(height: 8),
+                                    _ReadOnlyField(
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const _StarRow(rating: _mockRating),
+                                          Text('$_mockRatingCount ratings',
+                                              style: const TextStyle(
+                                                  fontSize: 14, color: AppColors.textGrey)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+
                             const SizedBox(height: 36),
 
+                            // ── Save changes ──────────────────── SHARED
                             PrimaryButton(
                               label: 'Save changes',
                               onPressed: _save,
-                              isLoading: _isSaving,
+                              isLoading: isSaving,
                             ),
                           ],
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
-          ],
-        ),
+          );
+        },
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    super.dispose();
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Private helper widgets — SHARED, unchanged between verified/unverified.
+// Private helper widgets
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Bold field label (e.g. "First Name").
 class _FieldLabel extends StatelessWidget {
   final String text;
   const _FieldLabel(this.text);
@@ -517,40 +559,37 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: const TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w800,
-        color: AppColors.textDark,
-      ),
+      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textDark),
     );
   }
 }
 
-/// White rounded editable text field.
 class _EditableField extends StatelessWidget {
   final TextEditingController controller;
   final String? hint;
+  final TextInputType? keyboardType;
+  final int maxLines;
 
-  const _EditableField({required this.controller, this.hint});
+  const _EditableField({
+    required this.controller,
+    this.hint,
+    this.keyboardType,
+    this.maxLines = 1,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
       child: TextField(
         controller: controller,
-        style: const TextStyle(
-          fontSize: 16,
-          color: AppColors.textDark,
-        ),
+        keyboardType: keyboardType,
+        maxLines: maxLines,
+        style: const TextStyle(fontSize: 16, color: AppColors.textDark),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: AppColors.hintGrey),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           border: InputBorder.none,
         ),
       ),
@@ -558,7 +597,6 @@ class _EditableField extends StatelessWidget {
   }
 }
 
-/// White rounded read-only container for non-editable info fields.
 class _ReadOnlyField extends StatelessWidget {
   final Widget child;
   const _ReadOnlyField({required this.child});
@@ -568,20 +606,50 @@ class _ReadOnlyField extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
       child: child,
     );
   }
 }
 
-/// Renders a row of up to 5 stars for a given [rating] (supports half-stars).
-class _StarRow extends StatelessWidget {
-  final double rating; // e.g. 3.5
-  final double size;
+/// Simple pill selector for gender. Postman's example body only shows
+/// "male" — please confirm the full set of accepted values with Yosef;
+/// adjust the `options` map below if "other" isn't accepted server-side.
+class _GenderSelector extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String> onChanged;
+  const _GenderSelector({required this.value, required this.onChanged});
 
+  @override
+  Widget build(BuildContext context) {
+    const options = {'male': 'Male', 'female': 'Female', 'other': 'Other'};
+    return Wrap(
+      spacing: 10,
+      children: options.entries.map((entry) {
+        final selected = value == entry.key;
+        return ChoiceChip(
+          label: Text(entry.value),
+          selected: selected,
+          onSelected: (_) => onChanged(entry.key),
+          selectedColor: AppColors.primaryRed,
+          labelStyle: TextStyle(
+            color: selected ? Colors.white : AppColors.textDark,
+            fontWeight: FontWeight.w600,
+          ),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppColors.borderGrey),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _StarRow extends StatelessWidget {
+  final double rating;
+  final double size;
   const _StarRow({required this.rating, this.size = 26});
 
   @override
@@ -592,11 +660,7 @@ class _StarRow extends StatelessWidget {
         final filled = rating >= i + 1;
         final half = !filled && rating >= i + 0.5;
         return Icon(
-          filled
-              ? Icons.star_rounded
-              : half
-                  ? Icons.star_half_rounded
-                  : Icons.star_outline_rounded,
+          filled ? Icons.star_rounded : (half ? Icons.star_half_rounded : Icons.star_outline_rounded),
           color: const Color(0xFFFFBD00),
           size: size,
         );
