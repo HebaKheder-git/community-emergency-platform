@@ -1,17 +1,48 @@
+// lib/screens/verification_step2_document_screen.dart
+//
+// EDITED — wired to the actual submission.
+//
+// - Whatever document type the user picks (ID Card / Passport / Driver's
+//   License), the front image is always sent as `id_card_front` and the
+//   back image as `id_card_back` — the API only has one document slot.
+// - Both front AND back are now required to proceed (previously either
+//   one alone was enough) since the backend needs both.
+// - Step 3 (location) doesn't have a backend endpoint wired yet, so
+//   pressing the button here submits everything gathered in Steps 1 + 2
+//   directly (POST /trust-verification, or the PUT-spoofed edit/resubmit
+//   endpoint when [isEditing] is true) and goes straight to
+//   VerificationPendingScreen — skipping VerificationStep3LocationScreen
+//   entirely for now. Re-insert step 3 into this flow once its fields have
+//   a real endpoint (send me that screen's code when you're ready to wire
+//   it and I'll thread it back in without disturbing this).
+
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_step_indicator.dart';
-import 'verification_step3_location_screen.dart';
+import '../cubits/trust_verification/trust_verification_cubit.dart';
+import '../cubits/trust_verification/trust_verification_state.dart';
+import 'verification_pending_screen.dart';
 
 /// Step 2 of 3 — user picks a document type (ID Card / Passport / Driver's
-/// License) and uploads front & back images. Switching document types resets
-/// the uploads but keeps the selection interactive. Only ONE document type
-/// needs to be filled to enable "Next".
+/// License) and uploads front & back images, then submits the full
+/// verification request built from Step 1's data + these two images.
 class VerificationStep2DocumentScreen extends StatefulWidget {
-  const VerificationStep2DocumentScreen({super.key});
+  final bool isEditing;
+  final String nationalId;
+  final DateTime birthDate;
+  final String facePhotoPath;
+
+  const VerificationStep2DocumentScreen({
+    super.key,
+    required this.nationalId,
+    required this.birthDate,
+    required this.facePhotoPath,
+    this.isEditing = false,
+  });
 
   @override
   State<VerificationStep2DocumentScreen> createState() =>
@@ -28,9 +59,9 @@ class _VerificationStep2DocumentScreenState
 
   final _picker = ImagePicker();
 
+  // CHANGED — both sides are now required (was: either one alone).
   bool get _canProceed =>
-      _selectedDoc != null &&
-      (_frontImage != null || _backImage != null);
+      _selectedDoc != null && _frontImage != null && _backImage != null;
 
   Future<void> _pickImage(bool isFront) async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
@@ -53,123 +84,167 @@ class _VerificationStep2DocumentScreenState
     });
   }
 
-  void _onNextPressed() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const VerificationStep3LocationScreen(),
-      ),
-    );
+  // CHANGED — submits the request instead of navigating to Step 3 (see the
+  // file header note above for why).
+  void _onSubmitPressed(BuildContext context) {
+    if (!_canProceed) return;
+    final cubit = context.read<TrustVerificationCubit>();
+    if (widget.isEditing) {
+      cubit.resubmit(
+        nationalId: widget.nationalId,
+        birthDate: widget.birthDate,
+        idCardFrontPath: _frontImage!.path,
+        idCardBackPath: _backImage!.path,
+        facePhotoPath: widget.facePhotoPath,
+      );
+    } else {
+      cubit.submit(
+        nationalId: widget.nationalId,
+        birthDate: widget.birthDate,
+        idCardFrontPath: _frontImage!.path,
+        idCardBackPath: _backImage!.path,
+        facePhotoPath: widget.facePhotoPath,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.screenPadding,
-                  vertical: 20,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Step indicator — step 1 done, step 2 active
-                    const VerificationStepIndicator(currentStep: 2),
-                    const SizedBox(height: 28),
+    return BlocProvider(
+      create: (_) => TrustVerificationCubit(),
+      child: BlocConsumer<TrustVerificationCubit, TrustVerificationState>(
+        listener: (context, state) {
+          if (state.status == TrustVerificationCubitStatus.submitted) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const VerificationPendingScreen()),
+              (route) => false,
+            );
+          } else if (state.status == TrustVerificationCubitStatus.failure &&
+              state.errorMessage != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(state.errorMessage!)),
+            );
+          }
+        },
+        builder: (context, state) {
+          final isSubmitting =
+              state.status == TrustVerificationCubitStatus.submitting;
+          return Scaffold(
+            body: SafeArea(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.screenPadding,
+                        vertical: 20,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Step indicator — step 1 done, step 2 active
+                          const VerificationStepIndicator(currentStep: 2),
+                          const SizedBox(height: 28),
 
-                    // ── Document type label ─────────────────────────────
-                    const Text(
-                      'Document Type',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: AppColors.hintGrey,
-                        fontWeight: FontWeight.w500,
+                          // ── Document type label ─────────────────────────
+                          const Text(
+                            'Document Type',
+                            style: TextStyle(
+                              fontSize: 15,
+                              color: AppColors.hintGrey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // ── Document type options ───────────────────────
+                          _DocTypeOption(
+                            label: 'ID Card',
+                            icon: Icons.badge_outlined,
+                            isSelected: _selectedDoc == _DocType.idCard,
+                            onTap: () => _onDocSelected(_DocType.idCard),
+                          ),
+                          const SizedBox(height: 10),
+                          _DocTypeOption(
+                            label: 'Passport',
+                            icon: Icons.language_outlined,
+                            isSelected: _selectedDoc == _DocType.passport,
+                            onTap: () => _onDocSelected(_DocType.passport),
+                          ),
+                          const SizedBox(height: 10),
+                          _DocTypeOption(
+                            label: "Driver's License",
+                            icon: Icons.drive_eta_outlined,
+                            isSelected:
+                                _selectedDoc == _DocType.driversLicense,
+                            onTap: () =>
+                                _onDocSelected(_DocType.driversLicense),
+                          ),
+
+                          // ── Upload boxes — animate in when a doc is chosen
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 250),
+                            transitionBuilder: (child, animation) =>
+                                FadeTransition(
+                                    opacity: animation, child: child),
+                            child: _selectedDoc != null
+                                ? Padding(
+                                    key: ValueKey(_selectedDoc),
+                                    padding: const EdgeInsets.only(top: 24),
+                                    child: Column(
+                                      children: [
+                                        _ImageUploadBox(
+                                          label: 'Tap to upload front side',
+                                          imageFile: _frontImage,
+                                          onTap: () => _pickImage(true),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        _ImageUploadBox(
+                                          label: 'Tap to upload back side',
+                                          imageFile: _backImage,
+                                          onTap: () => _pickImage(false),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+
+                          const SizedBox(height: 40),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 12),
+                  ),
 
-                    // ── Document type options ───────────────────────────
-                    _DocTypeOption(
-                      label: 'ID Card',
-                      icon: Icons.badge_outlined,
-                      isSelected: _selectedDoc == _DocType.idCard,
-                      onTap: () => _onDocSelected(_DocType.idCard),
+                  // ── Sticky Submit button ─────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.screenPadding,
+                      0,
+                      AppSpacing.screenPadding,
+                      24,
                     ),
-                    const SizedBox(height: 10),
-                    _DocTypeOption(
-                      label: 'Passport',
-                      icon: Icons.language_outlined,
-                      isSelected: _selectedDoc == _DocType.passport,
-                      onTap: () => _onDocSelected(_DocType.passport),
+                    child: PrimaryButton(
+                      label: widget.isEditing ? 'Resubmit' : 'Submit',
+                      isLoading: isSubmitting,
+                      enabled: _canProceed,
+                      onPressed: () => _onSubmitPressed(context),
                     ),
-                    const SizedBox(height: 10),
-                    _DocTypeOption(
-                      label: "Driver's License",
-                      icon: Icons.drive_eta_outlined,
-                      isSelected: _selectedDoc == _DocType.driversLicense,
-                      onTap: () => _onDocSelected(_DocType.driversLicense),
-                    ),
-
-                    // ── Upload boxes — animate in when a doc is chosen ──
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      transitionBuilder: (child, animation) =>
-                          FadeTransition(opacity: animation, child: child),
-                      child: _selectedDoc != null
-                          ? Padding(
-                              key: ValueKey(_selectedDoc),
-                              padding: const EdgeInsets.only(top: 24),
-                              child: Column(
-                                children: [
-                                  _ImageUploadBox(
-                                    label: 'Tap to upload front side',
-                                    imageFile: _frontImage,
-                                    onTap: () => _pickImage(true),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _ImageUploadBox(
-                                    label: 'Tap to upload back side',
-                                    imageFile: _backImage,
-                                    onTap: () => _pickImage(false),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-
-                    const SizedBox(height: 40),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-
-            // ── Sticky Next button ────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.screenPadding,
-                0,
-                AppSpacing.screenPadding,
-                24,
-              ),
-              child: PrimaryButton(
-                label: 'Next',
-                enabled: _canProceed,
-                onPressed: _onNextPressed,
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 }
 
 // ── Document type pill ──────────────────────────────────────────────────────
+// (unchanged from the original file)
 
 class _DocTypeOption extends StatelessWidget {
   final String label;
@@ -227,6 +302,7 @@ class _DocTypeOption extends StatelessWidget {
 }
 
 // ── Dashed upload box ───────────────────────────────────────────────────────
+// (unchanged from the original file)
 
 class _ImageUploadBox extends StatelessWidget {
   final String label;
@@ -253,8 +329,6 @@ class _ImageUploadBox extends StatelessWidget {
             width: 1.5,
             strokeAlign: BorderSide.strokeAlignInside,
           ),
-          // Dashed effect via a CustomPainter fallback or via DashedBorder
-          // Using the standard Border here; for true dashes see DashedBorder package.
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(11),

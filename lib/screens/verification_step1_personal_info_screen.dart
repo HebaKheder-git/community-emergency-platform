@@ -1,16 +1,31 @@
+// lib/screens/verification_step1_personal_info_screen.dart
+//
+// EDITED — added National ID + face-photo capture so this step now feeds
+// everything the backend needs from steps 1+2 combined:
+// national_id, verification_birth_date, and a single face photo that gets
+// sent under BOTH `verification_photo` and `holding_id_photo` — the user
+// never sees or fills a second "holding ID" field for that.
+//
+// First/Last name stay exactly as before in the UI and are still NEVER
+// sent to the backend (the API doesn't accept them yet).
+//
+// [isEditing] is passed in as true when this screen is reached from
+// VerificationPromptCard while a request is already `pending`/`rejected`,
+// so Step 2 knows to call resubmit() (PUT) instead of submit() (POST).
+
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_step_indicator.dart';
 import 'verification_step2_document_screen.dart';
 
-/// Step 1 of 3 — collects First Name, Last Name, and Date of Birth.
-/// The DOB hint text ("Your date of birth can only be changed once...") 
-/// appears only after the user starts interacting with the DOB fields,
-/// matching the difference between Figma images 2 and 3.
 class VerificationStep1PersonalInfoScreen extends StatefulWidget {
-  const VerificationStep1PersonalInfoScreen({super.key});
+  final bool isEditing;
+
+  const VerificationStep1PersonalInfoScreen({super.key, this.isEditing = false});
 
   @override
   State<VerificationStep1PersonalInfoScreen> createState() =>
@@ -23,6 +38,7 @@ class _VerificationStep1PersonalInfoScreenState
 
   final _firstNameController = TextEditingController();
   final _lastNameController = TextEditingController();
+  final _nationalIdController = TextEditingController(); // NEW
   final _dayController = TextEditingController();
   final _monthController = TextEditingController();
   final _yearController = TextEditingController();
@@ -30,6 +46,9 @@ class _VerificationStep1PersonalInfoScreenState
   final _dayFocus = FocusNode();
   final _monthFocus = FocusNode();
   final _yearFocus = FocusNode();
+
+  final _picker = ImagePicker(); // NEW
+  File? _facePhoto; // NEW — sent as both verification_photo & holding_id_photo
 
   bool _dobTouched = false; // shows the DOB warning once any DOB field is touched
 
@@ -51,6 +70,7 @@ class _VerificationStep1PersonalInfoScreenState
   void dispose() {
     _firstNameController.dispose();
     _lastNameController.dispose();
+    _nationalIdController.dispose();
     _dayController.dispose();
     _monthController.dispose();
     _yearController.dispose();
@@ -60,9 +80,22 @@ class _VerificationStep1PersonalInfoScreenState
     super.dispose();
   }
 
+  // NEW — captures the "straight face photo" via the front camera, just to
+  // confirm the user is a real human. Not shown/reused anywhere else.
+  Future<void> _pickFacePhoto() async {
+    final picked = await _picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.front,
+    );
+    if (picked == null) return;
+    setState(() => _facePhoto = File(picked.path));
+  }
+
   bool get _canProceed {
     return _firstNameController.text.trim().isNotEmpty &&
         _lastNameController.text.trim().isNotEmpty &&
+        _nationalIdController.text.trim().isNotEmpty && // NEW
+        _facePhoto != null && // NEW
         _dayController.text.trim().isNotEmpty &&
         _monthController.text.trim().isNotEmpty &&
         _yearController.text.trim().length == 4;
@@ -70,10 +103,23 @@ class _VerificationStep1PersonalInfoScreenState
 
   void _onNextPressed() {
     if (!_formKey.currentState!.validate()) return;
+    if (_facePhoto == null) return; // guarded by _canProceed already
+
+    final birthDate = DateTime(
+      int.parse(_yearController.text),
+      int.parse(_monthController.text),
+      int.parse(_dayController.text),
+    );
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const VerificationStep2DocumentScreen(),
+        builder: (_) => VerificationStep2DocumentScreen(
+          isEditing: widget.isEditing,
+          nationalId: _nationalIdController.text.trim(),
+          birthDate: birthDate,
+          facePhotoPath: _facePhoto!.path,
+        ),
       ),
     );
   }
@@ -128,6 +174,24 @@ class _VerificationStep1PersonalInfoScreenState
                       _buildNameWarning(),
                       const SizedBox(height: 20),
 
+                      // ── National ID ─────────────────────────────────── NEW
+                      const Text('National ID', style: _labelStyle),
+                      const SizedBox(height: 8),
+                      _buildNameField(
+                        controller: _nationalIdController,
+                        hint: 'Your national ID number',
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'Please enter your national ID'
+                            : null,
+                      ),
+                      const SizedBox(height: 6),
+                      _buildInfoText(
+                        text: 'Your national ID can ',
+                        bold: 'never be changed',
+                        suffix: ' once your account is verified.',
+                      ),
+                      const SizedBox(height: 20),
+
                       // ── Date of Birth ────────────────────────────────────
                       const Text('Date Of Birth', style: _labelStyle),
                       const SizedBox(height: 8),
@@ -145,6 +209,19 @@ class _VerificationStep1PersonalInfoScreenState
                               )
                             : const SizedBox.shrink(key: ValueKey('dob_empty')),
                       ),
+                      const SizedBox(height: 28),
+
+                      // ── Face photo ──────────────────────────────────── NEW
+                      const Text('Face Photo', style: _labelStyle),
+                      const SizedBox(height: 6),
+                      _buildInfoText(
+                        text: "A quick photo of your face — just to ",
+                        bold: "confirm you're a real person",
+                        suffix:
+                            '. Kept private and never shown to other members.',
+                      ),
+                      const SizedBox(height: 12),
+                      Center(child: _buildFacePhotoBox()),
 
                       const SizedBox(height: 40),
                     ],
@@ -174,6 +251,30 @@ class _VerificationStep1PersonalInfoScreenState
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  Widget _buildFacePhotoBox() {
+    return GestureDetector(
+      onTap: _pickFacePhoto,
+      child: Container(
+        width: 140,
+        height: 140,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.borderGrey, width: 1.5),
+          color: AppColors.background,
+        ),
+        child: ClipOval(
+          child: _facePhoto != null
+              ? Image.file(_facePhoto!, fit: BoxFit.cover)
+              : const Icon(
+                  Icons.face_retouching_natural,
+                  size: 48,
+                  color: AppColors.textGrey,
+                ),
+        ),
+      ),
+    );
+  }
 
   Widget _buildNameField({
     required TextEditingController controller,
