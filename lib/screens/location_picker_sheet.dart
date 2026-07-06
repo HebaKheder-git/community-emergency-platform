@@ -5,27 +5,27 @@ import '../widgets/location_map_picker.dart';
 
 /// Simple value object for the address pieces edited in the sheet.
 class EmergencyLocation {
-  final String area;
+  final String country;
   final String city;
-  final String postalCode;
+  final String state;
 
   const EmergencyLocation({
-    required this.area,
+    required this.country,
     required this.city,
-    required this.postalCode,
+    required this.state,
   });
 
-  String get formatted => '$area, $city, $postalCode';
+  String get formatted => '$country, $city, $state';
 
   EmergencyLocation copyWith({
-    String? area,
+    String? country,
     String? city,
-    String? postalCode,
+    String? state,
   }) {
     return EmergencyLocation(
-      area: area ?? this.area,
+      country: country ?? this.country,
       city: city ?? this.city,
-      postalCode: postalCode ?? this.postalCode,
+      state: state ?? this.state,
     );
   }
 }
@@ -59,9 +59,9 @@ class LocationPickerSheet extends StatefulWidget {
 
 class _LocationPickerSheetState extends State<LocationPickerSheet> {
   late final TextEditingController _searchController;
-  late final TextEditingController _areaController;
+  late final TextEditingController _countryController;
   late final TextEditingController _cityController;
-  late final TextEditingController _postalController;
+  late final TextEditingController _stateController;
 
   // Lets us call methods (searchAddress, track-my-location) on the map
   // widget from outside, e.g. from the search bar's submit handler.
@@ -71,17 +71,17 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
   void initState() {
     super.initState();
     _searchController = TextEditingController();
-    _areaController = TextEditingController(text: widget.initial.area);
+    _countryController = TextEditingController(text: widget.initial.country);
     _cityController = TextEditingController(text: widget.initial.city);
-    _postalController = TextEditingController(text: widget.initial.postalCode);
+    _stateController = TextEditingController(text: widget.initial.state);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _areaController.dispose();
+    _countryController.dispose();
     _cityController.dispose();
-    _postalController.dispose();
+    _stateController.dispose();
     super.dispose();
   }
 
@@ -89,9 +89,9 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
     Navigator.pop(
       context,
       EmergencyLocation(
-        area: _areaController.text.trim(),
+        country: _countryController.text.trim(),
         city: _cityController.text.trim(),
-        postalCode: _postalController.text.trim(),
+        state: _stateController.text.trim(),
       ),
     );
   }
@@ -200,9 +200,9 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                   height: 190,
                   onLocationPicked: (loc) {
                     setState(() {
-                      _areaController.text = loc.area;
+                      _countryController.text = loc.country;
                       _cityController.text = loc.city;
-                      _postalController.text = loc.postalCode;
+                      _stateController.text = loc.state;
                     });
                   },
                 ),
@@ -217,9 +217,9 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                     Expanded(
                       child: AnimatedBuilder(
                         animation: Listenable.merge(
-                            [_areaController, _cityController, _postalController]),
+                            [_countryController, _cityController, _stateController]),
                         builder: (context, _) => Text(
-                          '${_areaController.text}, ${_cityController.text}, ${_postalController.text}',
+                          '${_countryController.text}, ${_cityController.text}, ${_stateController.text}',
                           style: const TextStyle(
                             fontSize: 15,
                             color: AppColors.textDark,
@@ -231,13 +231,13 @@ class _LocationPickerSheetState extends State<LocationPickerSheet> {
                 ),
                 const SizedBox(height: 16),
 
-                _AddressField(controller: _areaController, hint: 'Area'),
+                _AddressField(controller: _countryController, hint: 'country'),
                 const SizedBox(height: AppSpacing.fieldGap),
                 _AddressField(controller: _cityController, hint: 'City'),
                 const SizedBox(height: AppSpacing.fieldGap),
                 _AddressField(
-                  controller: _postalController,
-                  hint: 'Postal Code',
+                  controller: _stateController,
+                  hint: 'state ',
                   keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 28),

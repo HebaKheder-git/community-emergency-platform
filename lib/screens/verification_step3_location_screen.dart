@@ -108,6 +108,21 @@ class VerificationStep3LocationScreen extends StatelessWidget {
 // ════════════════════════════════════════════════════════════════════════════
 // Step 3 — Select Location (Image 9)
 // Search bar + real interactive map + editable address fields.
+//
+// CHANGED (compatibility only — NOT wired to any API call):
+// LocationMapPicker's PickedLocation now returns (country, state, city)
+// instead of (area, city, postalCode), so the fields below were renamed to
+// match: Country, State/Governorate, City. A read-only Latitude/Longitude
+// caption was added under the map since that's one of the four fields you
+// asked for.
+//
+// FLAG FOR YOU: this screen's copy — "Your Permanent location is:",
+// "can only be changed once in a year" — reads like the separate
+// POST /emergency/profile/home-location endpoint the Postman collection
+// calls out (NOT the /profile/location pair this task wired up in
+// EditProfileScreen). I did not attach any API call here because I don't
+// have that endpoint's request/response shape. Send it over if you want
+// this flow linked too — same add/update pattern would apply.
 // ════════════════════════════════════════════════════════════════════════════
 
 class VerificationSelectLocationScreen extends StatefulWidget {
@@ -121,25 +136,30 @@ class VerificationSelectLocationScreen extends StatefulWidget {
 class _VerificationSelectLocationScreenState
     extends State<VerificationSelectLocationScreen> {
   final _searchController = TextEditingController();
-  final _streetController = TextEditingController();
+  final _countryController = TextEditingController();
+  final _stateController = TextEditingController();
   final _cityController = TextEditingController();
-  final _postalController = TextEditingController();
-  final _extraController = TextEditingController();
+
+  double? _latitude;
+  double? _longitude;
 
   // Lets us call methods (searchAddress) on the map widget from outside,
   // e.g. from the search bar's submit handler.
   final _mapKey = GlobalKey<LocationMapPickerState>();
 
   String get _formattedAddress =>
-      '${_streetController.text}, ${_cityController.text}, ${_postalController.text}';
+      '${_cityController.text}, ${_stateController.text}, ${_countryController.text}';
+
+  String get _formattedCoordinates => (_latitude != null && _longitude != null)
+      ? '${_latitude!.toStringAsFixed(5)}, ${_longitude!.toStringAsFixed(5)}'
+      : 'Pick a point on the map';
 
   @override
   void dispose() {
     _searchController.dispose();
-    _streetController.dispose();
+    _countryController.dispose();
+    _stateController.dispose();
     _cityController.dispose();
-    _postalController.dispose();
-    _extraController.dispose();
     super.dispose();
   }
 
@@ -232,9 +252,11 @@ class _VerificationSelectLocationScreenState
                       height: 160,
                       onLocationPicked: (loc) {
                         setState(() {
-                          _streetController.text = loc.area;
+                          _countryController.text = loc.country;
+                          _stateController.text = loc.state;
                           _cityController.text = loc.city;
-                          _postalController.text = loc.postalCode;
+                          _latitude = loc.latitude;
+                          _longitude = loc.longitude;
                         });
                       },
                     ),
@@ -249,9 +271,9 @@ class _VerificationSelectLocationScreenState
                         Expanded(
                           child: AnimatedBuilder(
                             animation: Listenable.merge([
-                              _streetController,
+                              _countryController,
+                              _stateController,
                               _cityController,
-                              _postalController,
                             ]),
                             builder: (context, _) => Text(
                               _formattedAddress,
@@ -261,21 +283,30 @@ class _VerificationSelectLocationScreenState
                         ),
                       ],
                     ),
+                    const SizedBox(height: 4),
+
+                    // Detected coordinates — read-only, set by the map tap /
+                    // GPS / search, per the requested Latitude/Longitude field.
+                    Row(
+                      children: [
+                        const Icon(Icons.my_location,
+                            size: 18, color: AppColors.textGrey),
+                        const SizedBox(width: 6),
+                        Text(_formattedCoordinates, style: AppTextStyles.subtitle),
+                      ],
+                    ),
                     const SizedBox(height: 16),
 
                     // ── Editable address fields ──────────────────────────
                     _buildAddressField(
-                        controller: _streetController,
-                        hint: 'Street / Area'),
+                        controller: _countryController, hint: 'Country'),
+                    const SizedBox(height: 10),
+                    _buildAddressField(
+                        controller: _stateController,
+                        hint: 'State / Governorate'),
                     const SizedBox(height: 10),
                     _buildAddressField(
                         controller: _cityController, hint: 'City'),
-                    const SizedBox(height: 10),
-                    _buildAddressField(
-                        controller: _postalController, hint: 'Postal Code'),
-                    const SizedBox(height: 10),
-                    _buildAddressField(
-                        controller: _extraController, hint: ''),
 
                     const SizedBox(height: 32),
                   ],
@@ -337,6 +368,7 @@ class _VerificationSelectLocationScreenState
 // ════════════════════════════════════════════════════════════════════════════
 // Step 3 — Confirm Location (Image 10)
 // All 3 steps complete; shows the selected address with a "Change" option.
+// Unchanged — still just displays whatever address string it's given.
 // ════════════════════════════════════════════════════════════════════════════
 
 class VerificationConfirmLocationScreen extends StatelessWidget {

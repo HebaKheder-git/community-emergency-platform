@@ -24,9 +24,9 @@ class _ReportEmergencyScreenState extends State<ReportEmergencyScreen> {
   SeverityLevel? _selectedSeverity;
 
   EmergencyLocation _location = const EmergencyLocation(
-    area: 'Kothrud',
+    country: 'Kothrud',
     city: 'Pune',
-    postalCode: '411038',
+    state: '411038',
   );
 
   final TextEditingController _otherController = TextEditingController();

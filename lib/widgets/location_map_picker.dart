@@ -7,20 +7,25 @@ import '../theme/app_theme.dart';
 
 /// Result handed back to the parent screen every time the user picks a
 /// point on the map (via GPS, tap, or address search).
+///
+/// CHANGED: fields used to be (area, city, postalCode). Renamed to match
+/// the backend's /profile/location shape — (country, state, city) plus the
+/// coordinates — per the requested field set: Country, State/Governorate,
+/// City, Latitude/Longitude.
 class PickedLocation {
   final double latitude;
   final double longitude;
-  final String area;
+  final String country;
+  final String state; // "State/Governorate" in the UI
   final String city;
-  final String postalCode;
   final String formattedAddress;
 
   const PickedLocation({
     required this.latitude,
     required this.longitude,
-    required this.area,
+    required this.country,
+    required this.state,
     required this.city,
-    required this.postalCode,
     required this.formattedAddress,
   });
 }
@@ -29,7 +34,7 @@ class PickedLocation {
 /// API key required) that:
 ///  - shows the user's current GPS position on load,
 ///  - lets them tap anywhere to drop the pin there instead,
-///  - reverse-geocodes whatever point is selected into area/city/postcode
+///  - reverse-geocodes whatever point is selected into country/state/city
 ///    and reports it back through [onLocationPicked],
 ///  - exposes [searchAddress] (call via a GlobalKey<LocationMapPickerState>)
 ///    so a search bar elsewhere in the screen can move the map too.
@@ -152,23 +157,23 @@ class LocationMapPickerState extends State<LocationMapPicker> {
       if (placemarks.isEmpty || !mounted) return;
 
       final p = placemarks.first;
-      final area = [p.subLocality, p.thoroughfare]
-          .where((s) => s != null && s.trim().isNotEmpty)
-          .join(', ');
+      final country = p.country ?? '';
+      // "State/Governorate" — geocoding's administrativeArea is the closest
+      // match to a governorate (e.g. "Damascus Governorate", "Aleppo").
+      final state = p.administrativeArea ?? '';
       final city = p.locality?.isNotEmpty == true
           ? p.locality!
           : (p.subAdministrativeArea ?? '');
-      final postalCode = p.postalCode ?? '';
       final formatted =
-          [area, city, postalCode].where((s) => s.isNotEmpty).join(', ');
+          [city, state, country].where((s) => s.isNotEmpty).join(', ');
 
       widget.onLocationPicked?.call(
         PickedLocation(
           latitude: point.latitude,
           longitude: point.longitude,
-          area: area.isEmpty ? (p.name ?? '') : area,
+          country: country,
+          state: state,
           city: city,
-          postalCode: postalCode,
           formattedAddress: formatted,
         ),
       );
