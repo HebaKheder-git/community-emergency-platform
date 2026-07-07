@@ -25,6 +25,7 @@ import '../widgets/social_login_row.dart';
 import 'forgot_password_email_screen.dart';
 import 'home_screen.dart';
 import 'sign_up_screen.dart';
+import '../main.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -88,6 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
       child: BlocConsumer<AuthCubit, AuthState>(
         listener: (context, state) {
           if (state.status == AuthStatus.loggedIn) {
+            EmergencyAuthApp.trustVerificationCubit.loadMine();
             Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (_) => const HomeScreen()),

@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../widgets/otp_input_boxes.dart';
 import '../widgets/primary_button.dart';
 import 'verification_success_screen.dart';
+import '../main.dart';
 
 enum OtpVerificationType { phone, email }
 
@@ -107,6 +108,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       child: BlocConsumer<AuthCubit, AuthState>(
         listener: (context, state) {
           if (state.status == AuthStatus.registerVerified) {
+            EmergencyAuthApp.trustVerificationCubit.loadMine();
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(

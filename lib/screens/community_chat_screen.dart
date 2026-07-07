@@ -8,7 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../models/chat_message.dart';
-import '../services/verification_status.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../cubits/trust_verification/trust_verification_cubit.dart';
+import '../cubits/trust_verification/trust_verification_state.dart';
 import '../widgets/unverified_access_notice.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -245,9 +247,9 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         ),
       ),
 
-      body: ValueListenableBuilder<bool>(
-        valueListenable: VerificationStatus.instance.isVerified,
-        builder: (context, verified, _) {
+      body: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
+        builder: (context, state) {
+          final verified = state.data.isApproved;
           if (!verified){
             return UnverifiedAccessNotice();}
           return Column(

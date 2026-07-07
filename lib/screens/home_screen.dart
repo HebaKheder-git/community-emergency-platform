@@ -14,7 +14,9 @@ import 'community_chat_screen.dart';
 import 'marketplaces_screen.dart';
 import 'service_providers_screen.dart';
 import 'settings_screen.dart'; // ← NEW
-import '../services/verification_status.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../cubits/trust_verification/trust_verification_cubit.dart';
+import '../cubits/trust_verification/trust_verification_state.dart';
 import '../widgets/home_unverified_content.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -170,9 +172,9 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F0F0),
-      body: ValueListenableBuilder<bool>(
-  valueListenable: VerificationStatus.instance.isVerified,
-  builder: (context, verified, _) {
+      body: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
+        builder: (context, state) {
+          final verified = state.data.isApproved;
     if (!verified) {
       // Home only:
       return HomeUnverifiedContent(

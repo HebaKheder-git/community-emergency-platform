@@ -24,9 +24,7 @@ class VerificationPromptCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => TrustVerificationCubit()..loadMine(),
-      child: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
+    return BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
         builder: (context, state) {
           // Fully verified — nothing left to nudge the user about.
           if (state.data.isApproved) return const SizedBox.shrink();
@@ -64,8 +62,7 @@ class VerificationPromptCard extends StatelessWidget {
               );
           }
         },
-      ),
-    );
+      );
   }
 
   Widget _buildCard(

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import 'verification_step1_personal_info_screen.dart';
-import '../services/verification_status.dart';
 import 'home_screen.dart';
 
 /// Screen shown right after VerificationSuccessScreen.
@@ -84,7 +83,6 @@ class AccountVerificationIntroScreen extends StatelessWidget {
               Center(
                 child: GestureDetector(
                   onTap: () {
-                    VerificationStatus.instance.markUnverified(); // explicit, though it's already the default
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(builder: (_) => const HomeScreen()),

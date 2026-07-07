@@ -49,7 +49,8 @@ import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_prompt_card.dart';
 import '../widgets/location_map_picker.dart';
-import '../services/verification_status.dart';
+import '../cubits/trust_verification/trust_verification_cubit.dart';
+import '../cubits/trust_verification/trust_verification_state.dart';
 import '../cubits/profile/profile_cubit.dart';
 import '../cubits/profile/profile_state.dart';
 import '../cubits/location/location_cubit.dart';
@@ -343,7 +344,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     // Location is verified-only and only worth sending once a point has
     // actually been picked (lat/lng required by PUT/PATCH /profile/location).
-    final isVerified = VerificationStatus.instance.isVerified.value;
+    final isVerified = context.read<TrustVerificationCubit>().state.data.isApproved;
     if (isVerified && _latitude != null && _longitude != null) {
       _locationCubit.saveLocation(
         latitude: _latitude!,
@@ -592,9 +593,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                   // ── Below this point content diverges by
                                   //    verification status. Location + visibility
                                   //    now live ONLY inside the verified branch.
-                                  ValueListenableBuilder<bool>(
-                                    valueListenable: VerificationStatus.instance.isVerified,
-                                    builder: (context, isVerified, _) {
+                                  BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
+                                    builder: (context, state) {
+                                      final isVerified = state.data.isApproved;
                                       if (!isVerified) {
                                         return const Padding(
                                           padding: EdgeInsets.only(top: 12),

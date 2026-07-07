@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../models/emergency_alert.dart';
 import 'emergency_alert_detail_screen.dart';
-import '../services/verification_status.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../cubits/trust_verification/trust_verification_cubit.dart';
+import '../cubits/trust_verification/trust_verification_state.dart';
 import '../widgets/unverified_access_notice.dart';
 
 /// "Notifications" screen — opened by tapping the notification bell on
@@ -45,9 +47,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         ),
         centerTitle: false,
       ),
-      body: ValueListenableBuilder<bool>(
-        valueListenable: VerificationStatus.instance.isVerified,
-        builder: (context, verified, _) {
+      body: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
+        builder: (context, state) {
+          final verified = state.data.isApproved;
           if (!verified){
             return UnverifiedAccessNotice();}
           return _alerts.isEmpty
