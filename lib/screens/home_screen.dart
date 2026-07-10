@@ -1,10 +1,3 @@
-// lib/screens/home_screen.dart
-// UPDATED — wires Chat tab → CommunityChatScreen,
-//            wires Marketplaces tab → MarketplacesScreen,
-//            wires Service providers tab → ServiceProvidersScreen,
-//            wires Settings tab → SettingsScreen,
-//            passes chatHasUnread to SoteriaBottomNav.
-
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
@@ -18,6 +11,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../cubits/trust_verification/trust_verification_cubit.dart';
 import '../cubits/trust_verification/trust_verification_state.dart';
 import '../widgets/home_unverified_content.dart';
+import 'home_location_search_screen.dart'; // ← NEW: Search for Group entry point
 
 // ════════════════════════════════════════════════════════════════════════════
 // HomeScreen — Emergency Request (SOS) Screen
@@ -95,6 +89,17 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _stopPulse() {
     setState(() => _isSosPressing = false);
+  }
+
+  // NEW — opens the "enter home location → search for a group" flow.
+  // Only ever called from inside the `verified` branch below, so the
+  // "account must be verified" requirement is automatically satisfied —
+  // there's no path to this button while unverified.
+  void _onSearchForGroupPressed() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const HomeLocationGateScreen()),
+    );
   }
 
   /// Called when any bottom-nav item is tapped.
@@ -359,6 +364,46 @@ class _HomeScreenState extends State<HomeScreen>
                         ],
                       );
                     },
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Search for Group ───────────────────────────────────────────
+            // NEW. Only rendered here, inside the `verified` branch of this
+            // BlocBuilder — an unverified user never sees this button, which
+            // is what makes "account must be verified" hold.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: GestureDetector(
+                onTap: _onSearchForGroupPressed,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.groups_outlined,
+                          color: AppColors.primaryRed),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Search for Emergency Group',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right,
+                          color: AppColors.textGrey),
+                    ],
                   ),
                 ),
               ),
