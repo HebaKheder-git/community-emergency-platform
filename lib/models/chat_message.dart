@@ -17,6 +17,9 @@ enum MessageType {
   voice, // audio recording
 }
 
+
+
+
 /// A single message inside the Community Group chat.
 /// When Qubit is wired up, replace the constructor with a fromJson / toJson
 /// factory — the field names and types below should stay stable.
@@ -70,104 +73,6 @@ class ChatMessage {
   });
 }
 
-/// Mock messages matching the Figma design exactly so the screen is
-/// fully interactive without backend wiring.  Replace/clear this list
-/// once Qubit is connected.
-
-//final List<ChatMessage> mockChatMessages = [
-//  // ── sent by "me" ──────────────────────────────────────────────────────────
-//  const ChatMessage(
-//    id: '1',
-//    sender: MessageSender.me,
-//    type: MessageType.text,
-//    text: 'look and see by urself',
-//    time: '10:10',
-//    isRead: true,
-//  ),
-//  const ChatMessage(
-//    id: '2',
-//    sender: MessageSender.me,
-//    type: MessageType.image,
-//    fileName: 'IMG_0475.PNG',
-//    fileSize: '2.4 MB',
-//    imageUrl: '', // placeholder — swap with real asset/network URL
-//    time: '10:15',
-//    isRead: true,
-//  ),
-//
-//  // ── Zein replies with a quote of "me" ────────────────────────────────────
-//  const ChatMessage(
-//    id: '3',
-//    sender: MessageSender.other,
-//    senderName: 'Zein Alkhnaisee',
-//    type: MessageType.text,
-//    replyToSenderName: 'You',
-//    replyToText: 'Good morning!',
-//    text: 'Good morning!',
-//    time: '11:40',
-//    isRead: false,
-//  ),
-//
-//  // ── sent by "me" ──────────────────────────────────────────────────────────
-//  const ChatMessage(
-//    id: '4',
-//    sender: MessageSender.me,
-//    type: MessageType.text,
-//    text: 'We need more help here',
-//    time: '11:43',
-//    isRead: true,
-//  ),
-//
-//  // ── Yosef ─────────────────────────────────────────────────────────────────
-//  const ChatMessage(
-//    id: '5',
-//    sender: MessageSender.other,
-//    senderName: 'Yosef Aloosh',
-//    type: MessageType.text,
-//    text: 'There is a group of people coming right now',
-//    time: '11:45',
-//    isRead: false,
-//  ),
-//  const ChatMessage(
-//    id: '6',
-//    sender: MessageSender.other,
-//    senderName: '',
-//    type: MessageType.text,
-//    text: 'Is there fire?',
-//    time: '11:45',
-//    isRead: false,
-//  ),
-//
-//  // ── sent by "me" ──────────────────────────────────────────────────────────
-//  const ChatMessage(
-//    id: '7',
-//    sender: MessageSender.me,
-//    type: MessageType.text,
-//    text: 'No, there is not .....',
-//    time: '11:50',
-//    isRead: true,
-//  ),
-//  const ChatMessage(
-//    id: '8',
-//    sender: MessageSender.me,
-//    type: MessageType.image,
-//    fileName: 'IMG_0483.PNG',
-//    fileSize: '2.8 MB',
-//    imageUrl: '',
-//    time: '11:51',
-//    isRead: true,
-//  ),
-//  const ChatMessage(
-//    id: '9',
-//    sender: MessageSender.me,
-//    type: MessageType.image,
-//    fileName: 'IMG_0484.PNG',
-//    fileSize: '2.6 MB',
-//    imageUrl: '',
-//    time: '11:51',
-//    isRead: false,
-//  ),
-//];
 /// Raw shape returned by GET/POST /emergency/chat.
 ///
 /// ⚠️ ASSUMPTION FLAG: no sample response in the collection for either
@@ -238,23 +143,39 @@ factory ChatMessageDto.fromJson(Map<String, dynamic> json) {
 /// paginator, or data.messages:[...]).
 class ChatMessagePage {
   final List<ChatMessageDto> messages;
+  final int currentPage;
+  final int lastPage;
+  final int total;
 
-  const ChatMessagePage({this.messages = const []});
+  const ChatMessagePage({
+    this.messages = const [],
+    this.currentPage = 1,
+    this.lastPage = 1,
+    this.total = 0,
+  });
 
   factory ChatMessagePage.fromJson(Map<String, dynamic> json) {
-    final root = (json['data'] is Map<String, dynamic>)
-        ? json['data'] as Map<String, dynamic>
-        : json;
-    final list = (root['data'] is List)
-        ? root['data'] as List
-        : (root['messages'] is List)
-            ? root['messages'] as List
+    final list = (json['data'] is List)
+        ? json['data'] as List
+        : (json['messages'] is List)
+            ? json['messages'] as List
             : const [];
+
+    final meta = (json['meta'] is Map<String, dynamic>)
+        ? json['meta'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+
+    int toInt(dynamic v, int fallback) =>
+        v == null ? fallback : (int.tryParse(v.toString()) ?? fallback);
+
     return ChatMessagePage(
       messages: list
           .whereType<Map<String, dynamic>>()
           .map(ChatMessageDto.fromJson)
           .toList(),
+      currentPage: toInt(meta['current_page'], 1),
+      lastPage: toInt(meta['last_page'], 1),
+      total: toInt(meta['total'], list.length),
     );
   }
 }

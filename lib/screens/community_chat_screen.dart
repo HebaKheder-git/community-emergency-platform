@@ -66,6 +66,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   void initState() {
     super.initState();
     _chatCubit.loadMessages(); // NEW
+    _scrollController.addListener(_onScroll); // NEW
     _textController.addListener(() {
       final hasText = _textController.text.trim().isNotEmpty;
       if (hasText != _hasText) setState(() => _hasText = hasText);
@@ -73,9 +74,16 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
+  void _onScroll() {
+  if (_scrollController.position.pixels <= 100) {
+    _chatCubit.loadOlderMessages();
+  }
+}
+
   @override
   void dispose() {
     _textController.dispose();
+    _scrollController.removeListener(_onScroll); // NEW
     _scrollController.dispose();
     _recordTimer?.cancel();
     _chatCubit.close(); // NEW
@@ -274,10 +282,17 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                       child: ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        itemCount: chatState.messages.length,
+                        itemCount: chatState.messages.length + (chatState.isLoadingMore ? 1 : 0),
                         itemBuilder: (context, index) {
-                          final msg = chatState.messages[index];
-                          final prevMsg = index > 0 ? chatState.messages[index - 1] : null;
+                          if (chatState.isLoadingMore && index == 0) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                            );
+                          }
+                          final msgIndex = chatState.isLoadingMore ? index - 1 : index;
+                          final msg = chatState.messages[msgIndex];
+                          final prevMsg = msgIndex > 0 ? chatState.messages[msgIndex - 1] : null;
                           final showSenderName = msg.sender == MessageSender.other &&
                               msg.senderName.isNotEmpty &&
                               (prevMsg == null ||

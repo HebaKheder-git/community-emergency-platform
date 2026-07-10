@@ -19,27 +19,96 @@ class ChatCubit extends Cubit<ChatState> {
   String? _myName;
   int? _myId; // NEW
 
-  Future<void> loadMessages() async {
-    emit(state.copyWith(status: ChatStatus.loading));
-    _myId ??= await _tokenStorage.readId();       // NEW
-    _myEmail ??= await _tokenStorage.readEmail();
-    _myName ??= await _tokenStorage.readName();
-    try {
-      final page = await _repository.getHomeMessages();
+Future<void> loadMessages() async {
+  if (isClosed) return;
+  emit(state.copyWith(status: ChatStatus.loading));
+
+  _myId ??= await _tokenStorage.readId();
+  _myEmail ??= await _tokenStorage.readEmail();
+  _myName ??= await _tokenStorage.readName();
+
+  try {
+    final firstPage = await _repository.getHomeMessages(page: 1);
+
+    if (isClosed) return;
+
+    final targetPage = firstPage.lastPage;
+
+    final page = targetPage == 1
+        ? firstPage
+        : await _repository.getHomeMessages(page: targetPage);
+
+    if (isClosed) return;
+
+    emit(state.copyWith(
+      status: ChatStatus.loaded,
+      messages: page.messages
+          .map((dto) => chatMessageFromDto(
+                dto,
+                myId: _myId,
+                myEmail: _myEmail,
+                myName: _myName,
+              ))
+          .toList(),
+      currentPage: page.currentPage,
+      hasMoreOlder: page.currentPage > 1,
+    ));
+  } on ApiException catch (e) {
+    if (isClosed) return;
+
+    if (e.statusCode == 403) {
+      emit(state.copyWith(status: ChatStatus.noHomeGroup));
+    } else {
       emit(state.copyWith(
-        status: ChatStatus.loaded,
-        messages: page.messages
-            .map((dto) => chatMessageFromDto(dto, myId: _myId, myEmail: _myEmail, myName: _myName))
-            .toList(),
+        status: ChatStatus.failure,
+        errorMessage: e.message,
       ));
-    } on ApiException catch (e) {
-      if (e.statusCode == 403) {
-        emit(state.copyWith(status: ChatStatus.noHomeGroup));
-      } else {
-        emit(state.copyWith(status: ChatStatus.failure, errorMessage: e.message));
-      }
     }
   }
+}
+
+Future<void> loadOlderMessages() async {
+  if (!state.hasMoreOlder || state.isLoadingMore || isClosed) return;
+
+  final olderPage = state.currentPage - 1;
+
+  if (olderPage < 1) {
+    if (isClosed) return;
+    emit(state.copyWith(hasMoreOlder: false));
+    return;
+  }
+
+  emit(state.copyWith(isLoadingMore: true));
+
+  try {
+    final page = await _repository.getHomeMessages(page: olderPage);
+
+    if (isClosed) return;
+
+    final older = page.messages
+        .map((dto) => chatMessageFromDto(
+              dto,
+              myId: _myId,
+              myEmail: _myEmail,
+              myName: _myName,
+            ))
+        .toList();
+
+    emit(state.copyWith(
+      isLoadingMore: false,
+      messages: [...older, ...state.messages],
+      currentPage: page.currentPage,
+      hasMoreOlder: page.currentPage > 1,
+    ));
+  } on ApiException catch (e) {
+    if (isClosed) return;
+
+    emit(state.copyWith(
+      isLoadingMore: false,
+      errorMessage: e.message,
+    ));
+  }
+}
 
   /// Optimistically appends the message so the bubble shows immediately,
   /// then reconciles with the server's copy (id/time may change) — or
