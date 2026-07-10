@@ -60,6 +60,7 @@ class EmergencyGroupCubit extends Cubit<EmergencyGroupState> {
       emit(state.copyWith(
         status: EmergencyGroupStatus.joined,
         joinResult: result,
+        chatId: result.chatId, // NEW — null for pending joins until approved
       ));
     } on ApiException catch (e) {
       emit(state.copyWith(
@@ -81,6 +82,7 @@ class EmergencyGroupCubit extends Cubit<EmergencyGroupState> {
       emit(state.copyWith(
         status: EmergencyGroupStatus.joined,
         joinResult: result,
+        chatId: result.chatId, // NEW — null for pending joins until approved
       ));
     } on ApiException catch (e) {
       emit(state.copyWith(
@@ -101,12 +103,25 @@ class EmergencyGroupCubit extends Cubit<EmergencyGroupState> {
       emit(state.copyWith(
         status: EmergencyGroupStatus.joined,
         joinResult: result,
+        chatId: result.chatId, // NEW — null for pending joins until approved
       ));
     } on ApiException catch (e) {
       emit(state.copyWith(
         status: EmergencyGroupStatus.failure,
         errorMessage: e.message,
       ));
+    }
+  }
+  /// GET /emergency/my-group — call once when the app starts (e.g. in
+  /// HomeScreen.initState) so a returning trusted user who already belongs
+  /// to a home group gets chat access restored without repeating the join
+  /// flow. Silent on failure — this is a background check, not a
+  /// user-triggered action; the chat screen surfaces its own error if
+  /// loading messages fails.
+  Future<void> loadHomeGroup() async {
+    final info = await _repository.getMyGroup();
+    if (info != null && info.hasChatAccess) {
+      emit(state.copyWith(chatId: info.chatId));
     }
   }
 }

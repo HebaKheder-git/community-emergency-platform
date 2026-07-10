@@ -173,3 +173,36 @@ class JoinConfirmationResult {
   /// Pending-group confirms return chat_id: null until an admin approves.
   bool get isPendingApproval => chatId == null;
 }
+/// Response of GET /emergency/my-group.
+///
+/// ⚠️ ASSUMPTION FLAG: no sample response in the collection for this
+/// endpoint (empty "response": []). Postman description says it "Returns
+/// group + membership + chat_id (= group.id)", so I'm assuming:
+/// { "data": { "chat_id": 4, "group": { "id": 4, "name": "..." } } }
+/// Parsed defensively — send a real sample and I'll tighten this.
+class HomeGroupInfo {
+  final int? chatId;
+  final int? groupId;
+  final String? groupName;
+
+  const HomeGroupInfo({this.chatId, this.groupId, this.groupName});
+
+  factory HomeGroupInfo.fromJson(Map<String, dynamic> json) {
+    final root = (json['data'] is Map<String, dynamic>)
+        ? json['data'] as Map<String, dynamic>
+        : json;
+    int? toInt(dynamic v) => v == null ? null : int.tryParse(v.toString());
+
+    final group = (root['group'] is Map<String, dynamic>)
+        ? root['group'] as Map<String, dynamic>
+        : null;
+
+    return HomeGroupInfo(
+      chatId: toInt(root['chat_id']) ?? toInt(group?['id']),
+      groupId: toInt(group?['id']) ?? toInt(root['group_id']),
+      groupName: group?['name'] as String?,
+    );
+  }
+
+  bool get hasChatAccess => chatId != null;
+}

@@ -9,9 +9,11 @@ import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../models/chat_message.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../cubits/trust_verification/trust_verification_cubit.dart';
-import '../cubits/trust_verification/trust_verification_state.dart';
+import '../cubits/auth/auth_cubit.dart';
+import '../cubits/auth/auth_state.dart';
 import '../widgets/unverified_access_notice.dart';
+import '../cubits/chat/chat_cubit.dart';
+import '../cubits/chat/chat_state.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 // CommunityChatScreen
@@ -52,8 +54,7 @@ class CommunityChatScreen extends StatefulWidget {
 }
 
 class _CommunityChatScreenState extends State<CommunityChatScreen> {
-  // ── state ──────────────────────────────────────────────────────────────────
-  final List<ChatMessage> _messages = List.from(mockChatMessages);
+  final ChatCubit _chatCubit = ChatCubit(); // REPLACES: final List<ChatMessage> _messages = List.from(mockChatMessages);
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   bool _isRecording = false;
@@ -64,6 +65,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   @override
   void initState() {
     super.initState();
+    _chatCubit.loadMessages(); // NEW
     _textController.addListener(() {
       final hasText = _textController.text.trim().isNotEmpty;
       if (hasText != _hasText) setState(() => _hasText = hasText);
@@ -76,6 +78,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     _textController.dispose();
     _scrollController.dispose();
     _recordTimer?.cancel();
+    _chatCubit.close(); // NEW
     super.dispose();
   }
 
@@ -101,44 +104,20 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   void _sendText() {
     final body = _textController.text.trim();
     if (body.isEmpty) return;
-    setState(() {
-      _messages.add(ChatMessage(
-        id: UniqueKey().toString(),
-        sender: MessageSender.me,
-        type: MessageType.text,
-        text: body,
-        time: _now(),
-        isRead: false,
-      ));
-    });
+    _chatCubit.sendMessage(body);
     _textController.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final List<XFile> picked =
-        await picker.pickMultiImage(imageQuality: 80);
-    if (picked.isEmpty) return;
-    setState(() {
-      for (final xfile in picked) {
-        final name = xfile.name;
-        final bytes =
-            File(xfile.path).lengthSync(); // approx size
-        final kb = (bytes / 1024).toStringAsFixed(1);
-        _messages.add(ChatMessage(
-          id: UniqueKey().toString(),
-          sender: MessageSender.me,
-          type: MessageType.image,
-          fileName: name,
-          fileSize: '$kb KB',
-          imageUrl: xfile.path,
-          time: _now(),
-          isRead: false,
-        ));
-      }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    final List<XFile> picked = await picker.pickMultiImage(imageQuality: 80);
+    if (picked.isEmpty || !mounted) return;
+    // TODO: no attachment endpoint in the API collection yet — wire this
+    // up once Yosef adds one instead of showing this snackbar.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Sending images isn't supported by the server yet.")),
+    );
   }
 
   void _startRecording() {
@@ -155,153 +134,180 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
   void _stopRecording() {
     _recordTimer?.cancel();
     if (!_isRecording) return;
-    final duration =
-        '${(_recordSeconds ~/ 60).toString().padLeft(1, '0')}:${(_recordSeconds % 60).toString().padLeft(2, '0')}';
-    setState(() {
-      _isRecording = false;
-      if (_recordSeconds >= 1) {
-        _messages.add(ChatMessage(
-          id: UniqueKey().toString(),
-          sender: MessageSender.me,
-          type: MessageType.voice,
-          voiceDuration: duration,
-          time: _now(),
-          isRead: false,
-        ));
-      }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    setState(() => _isRecording = false);
+    if (_recordSeconds >= 1 && mounted) {
+      // TODO: same as _pickImage — no voice-attachment endpoint yet.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Sending voice messages isn't supported by the server yet.")),
+      );
+    }
   }
 
   // ── build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF0F0F0),
-      // ── Header ──────────────────────────────────────────────────────────────
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(72),
-        child: SafeArea(
-          bottom: false,
-          child: Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              children: [
-                // Group avatar
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.primaryRed,
-                      width: 1.5,
+    return BlocProvider.value( // NEW wrapper
+      value: _chatCubit,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF0F0F0),
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(72),
+          child: SafeArea(
+            bottom: false,
+            child: Container(
+              color: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  // Group avatar
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.primaryRed,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: const CircleAvatar(
+                      backgroundColor: Color(0xFFFFF0EF),
+                      child: Icon(
+                        Icons.group_outlined,
+                        color: AppColors.primaryRed,
+                        size: 24,
+                      ),
                     ),
                   ),
-                  child: const CircleAvatar(
-                    backgroundColor: Color(0xFFFFF0EF),
-                    child: Icon(
-                      Icons.group_outlined,
-                      color: AppColors.primaryRed,
-                      size: 24,
+                  const SizedBox(width: 12),
+                  // Group name + members
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Community Group',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryRed,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'You, Zein and Yosef',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textGrey,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                // Group name + members
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Community Group',
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primaryRed,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'You, Zein and Yosef',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textGrey,
-                        ),
-                      ),
-                    ],
+                  // Info icon (placeholder)
+                  IconButton(
+                    icon: const Icon(Icons.info_outline_rounded,
+                        color: AppColors.textGrey, size: 24),
+                    onPressed: () {},
                   ),
-                ),
-                // Info icon (placeholder)
-                IconButton(
-                  icon: const Icon(Icons.info_outline_rounded,
-                      color: AppColors.textGrey, size: 24),
-                  onPressed: () {},
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
 
-      body: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
-        builder: (context, state) {
-          final verified = state.data.isApproved;
-          if (!verified){
-            return UnverifiedAccessNotice();}
-          return Column(
-        children: [
-          // ── Message list ──────────────────────────────────────────────────
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                final prevMsg = index > 0 ? _messages[index - 1] : null;
+        body: BlocBuilder<AuthCubit, AuthState>(
+          builder: (context, authState) {
+          final verified = authState.isTrusted;
+          if (!verified) return const UnverifiedAccessNotice();
 
-                // Show sender name only when it changes in a run of incoming
-                final showSenderName = msg.sender == MessageSender.other &&
-                    msg.senderName.isNotEmpty &&
-                    (prevMsg == null ||
-                        prevMsg.senderName != msg.senderName ||
-                        prevMsg.sender != MessageSender.other);
+            return BlocConsumer<ChatCubit, ChatState>(
+              listener: (context, chatState) {
+                if (chatState.status == ChatStatus.loaded) {
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _scrollToBottom());
+                }
+              },
+              builder: (context, chatState) {
+                if (chatState.status == ChatStatus.initial ||
+                    chatState.status == ChatStatus.loading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (chatState.status == ChatStatus.noHomeGroup) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        "You haven't joined your home emergency group yet — "
+                        "join one to unlock its chat.",
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+                if (chatState.status == ChatStatus.failure &&
+                    chatState.messages.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(chatState.errorMessage ?? 'Something went wrong.',
+                              textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          ElevatedButton(
+                            onPressed: _chatCubit.loadMessages,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
 
-                return _ChatBubble(
-                  message: msg,
-                  showSenderName: showSenderName,
+                return Column(
+                  children: [
+                    Expanded(
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        itemCount: chatState.messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = chatState.messages[index];
+                          final prevMsg = index > 0 ? chatState.messages[index - 1] : null;
+                          final showSenderName = msg.sender == MessageSender.other &&
+                              msg.senderName.isNotEmpty &&
+                              (prevMsg == null ||
+                                  prevMsg.senderName != msg.senderName ||
+                                  prevMsg.sender != MessageSender.other);
+                          return _ChatBubble(message: msg, showSenderName: showSenderName);
+                        },
+                      ),
+                    ),
+                    if (_isRecording) _RecordingBar(seconds: _recordSeconds),
+                    _ChatInputBar(
+                      controller: _textController,
+                      hasText: _hasText,
+                      onAttach: _pickImage,
+                      onSend: _sendText,
+                      onMicStart: _startRecording,
+                      onMicEnd: _stopRecording,
+                    ),
+                  ],
                 );
               },
-            ),
-          ),
+            );
+          },
+        ),
 
-          // ── Recording indicator ───────────────────────────────────────────
-          if (_isRecording) _RecordingBar(seconds: _recordSeconds),
-
-          // ── Input bar ─────────────────────────────────────────────────────
-          _ChatInputBar(
-            controller: _textController,
-            hasText: _hasText,
-            onAttach: _pickImage,
-            onSend: _sendText,
-            onMicStart: _startRecording,
-            onMicEnd: _stopRecording,
-          ),
-        ],
-      );
-    },
-  ),
-
-      // ── Bottom Nav ─────────────────────────────────────────────────────────
-      bottomNavigationBar: SoteriaBottomNav(
-        selectedIndex: widget.selectedNavIndex,
-        onTap: widget.onNavTap,
-        chatHasUnread: false, // already ON this screen, so clear the dot
+        bottomNavigationBar: SoteriaBottomNav(
+          selectedIndex: widget.selectedNavIndex,
+          onTap: widget.onNavTap,
+          chatHasUnread: false,
+        ),
       ),
     );
   }

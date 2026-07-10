@@ -89,13 +89,17 @@ class EmergencyGroupRepository {
     });
   }
 
-  /// GET /emergency/my-group — not wired into this flow yet since you said
-  /// to ignore chat linking for now, but ready for whenever you build the
-  /// "my group" / chat entry point. Returns null on 403/404 (not a member
-  /// yet) instead of throwing, same pattern as LocationRepository.
-  Future<Map<String, dynamic>?> getMyGroupRaw() async {
+  // REMOVE the existing getMyGroupRaw() method and REPLACE with:
+
+  /// GET /emergency/my-group — used to (re)discover the caller's chat_id,
+  /// e.g. right after joining, or on app start for a returning trusted
+  /// user who already belongs to a home group.
+  /// Returns null on 403/404 (not an active member yet) so the Cubit can
+  /// show "join a group" instead of an error.
+  Future<HomeGroupInfo?> getMyGroup() async {
     try {
-      return await _api.get('/emergency/my-group');
+      final res = await _api.get('/emergency/my-group');
+      return HomeGroupInfo.fromJson(res);
     } on ApiException catch (e) {
       if (e.statusCode == 403 || e.statusCode == 404) return null;
       rethrow;

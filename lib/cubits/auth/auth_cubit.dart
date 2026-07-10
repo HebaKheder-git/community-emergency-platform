@@ -84,13 +84,32 @@ class AuthCubit extends Cubit<AuthState> {
     emit(state.copyWith(status: AuthStatus.loading));
     try {
       await _repository.login(email: email, password: password);
-      emit(state.copyWith(status: AuthStatus.loggedIn));
-    } on ApiException catch (e) {
+
+      // NEW — pull roles immediately so `isTrusted` gating (chat, SOS, etc.)
+      // is correct right after login, instead of depending on some screen
+      // remembering to call fetchMe() later. Non-fatal: login itself already
+      // succeeded, so a failure here shouldn't block the user out of the app.
+      var roles = const <String>[];
+      var permissions = const <String>[];
+      try {
+        final me = await _repository.getMe();
+        roles = me.roles;
+        permissions = me.permissions;
+      } catch (_) {
+        // swallow — chat/SOS screens can call fetchMe() again to retry.
+      }
+
       emit(state.copyWith(
-        status: AuthStatus.failure,
-        errorMessage: e.message,
-        fieldErrors: e.fieldErrors,
-      ));
+          status: AuthStatus.loggedIn,
+          roles: roles,
+          permissions: permissions,
+        ));
+      } on ApiException catch (e) {
+        emit(state.copyWith(
+          status: AuthStatus.failure,
+          errorMessage: e.message,
+          fieldErrors: e.fieldErrors,
+        ));
     }
   }
 

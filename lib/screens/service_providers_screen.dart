@@ -7,8 +7,8 @@ import '../widgets/service_provider_card.dart';
 import '../models/service_provider.dart';
 import '../models/marketplace.dart' show MarketLocation, MarketLocationX;
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../cubits/trust_verification/trust_verification_cubit.dart';
-import '../cubits/trust_verification/trust_verification_state.dart';
+import '../cubits/auth/auth_cubit.dart';
+import '../cubits/auth/auth_state.dart';
 import '../widgets/unverified_access_notice.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -235,10 +235,10 @@ class _ServiceProvidersScreenState extends State<ServiceProvidersScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F0F0),
-      body: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
-        builder: (context, state) {
-          final verified = state.data.isApproved;
-        if (!verified){
+      body: BlocBuilder<AuthCubit, AuthState>(
+        builder: (context, authState) {
+          final verified = authState.isTrusted;
+          if (!verified){
             return UnverifiedAccessNotice();}
         return SafeArea(
         child: Column(

@@ -49,8 +49,8 @@ import '../theme/app_theme.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/verification_prompt_card.dart';
 import '../widgets/location_map_picker.dart';
-import '../cubits/trust_verification/trust_verification_cubit.dart';
-import '../cubits/trust_verification/trust_verification_state.dart';
+import '../cubits/auth/auth_cubit.dart';
+import '../cubits/auth/auth_state.dart';
 import '../cubits/profile/profile_cubit.dart';
 import '../cubits/profile/profile_state.dart';
 import '../cubits/location/location_cubit.dart';
@@ -344,7 +344,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     // Location is verified-only and only worth sending once a point has
     // actually been picked (lat/lng required by PUT/PATCH /profile/location).
-    final isVerified = context.read<TrustVerificationCubit>().state.data.isApproved;
+    final isVerified = context.read<AuthCubit>().state.isTrusted;
     if (isVerified && _latitude != null && _longitude != null) {
       _locationCubit.saveLocation(
         latitude: _latitude!,
@@ -593,10 +593,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                   // ── Below this point content diverges by
                                   //    verification status. Location + visibility
                                   //    now live ONLY inside the verified branch.
-                                  BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
-                                    builder: (context, state) {
-                                      final isVerified = state.data.isApproved;
-                                      if (!isVerified) {
+                                  BlocBuilder<AuthCubit, AuthState>(
+                                    builder: (context, authState) {
+                                    final verified = authState.isTrusted;
+                                    if (!verified){
                                         return const Padding(
                                           padding: EdgeInsets.only(top: 12),
                                           child: VerificationPromptCard(),

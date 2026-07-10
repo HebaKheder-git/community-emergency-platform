@@ -76,35 +76,37 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    context.read<AuthCubit>().login(
-          email: _emailController.text.trim(),
-          password: _passwordController.text,
-        );
+    EmergencyAuthApp.authCubit.login(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => AuthCubit(),
-      child: BlocConsumer<AuthCubit, AuthState>(
-        listener: (context, state) {
-          if (state.status == AuthStatus.loggedIn) {
-            EmergencyAuthApp.trustVerificationCubit.loadMine();
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-              (_) => false,
-            );
-          } else if (state.status == AuthStatus.failure &&
-              state.errorMessage != null) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(state.errorMessage!)),
-            );
-          }
-        },
-        builder: (context, state) {
-          final isLoading = state.status == AuthStatus.loading;
-          return Scaffold(
+    // CHANGED — was: BlocProvider(create: (_) => AuthCubit(), child: ...)
+    // Now reuses the single shared instance from main.dart, so the roles
+    // fetched during login survive after this screen is popped/removed.
+    return BlocConsumer<AuthCubit, AuthState>(
+      bloc: EmergencyAuthApp.authCubit,
+      listener: (context, state) {
+        if (state.status == AuthStatus.loggedIn) {
+          EmergencyAuthApp.trustVerificationCubit.loadMine();
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (_) => false,
+          );
+        } else if (state.status == AuthStatus.failure &&
+            state.errorMessage != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.errorMessage!)),
+          );
+        }
+      },
+      builder: (context, state) {
+        final isLoading = state.status == AuthStatus.loading;
+        return Scaffold(
             body: SafeArea(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(
@@ -224,7 +226,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           );
         },
-      ),
-    );
+      );
   }
 }

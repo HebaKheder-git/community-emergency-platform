@@ -8,8 +8,8 @@ import 'marketplaces_screen.dart';
 import 'service_providers_screen.dart';
 import 'settings_screen.dart'; // ← NEW
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../cubits/trust_verification/trust_verification_cubit.dart';
-import '../cubits/trust_verification/trust_verification_state.dart';
+import '../cubits/auth/auth_cubit.dart';
+import '../cubits/auth/auth_state.dart';
 import '../widgets/home_unverified_content.dart';
 import 'home_location_search_screen.dart'; // ← NEW: Search for Group entry point
 
@@ -177,9 +177,9 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F0F0),
-      body: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
-        builder: (context, state) {
-          final verified = state.data.isApproved;
+      body: BlocBuilder<AuthCubit, AuthState>(
+        builder: (context, authState) {
+          final verified = authState.isTrusted;
     if (!verified) {
       // Home only:
       return HomeUnverifiedContent(

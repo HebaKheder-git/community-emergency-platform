@@ -19,6 +19,7 @@ class AuthState extends Equatable {
   final Map<String, List<String>> fieldErrors;
   final List<String> roles;          // NEW
   final List<String> permissions;    // NEW
+  static const String trustedRole = 'trusted'; // NEW
 
   const AuthState({
     this.status = AuthStatus.idle,
@@ -28,6 +29,13 @@ class AuthState extends Equatable {
     this.roles = const [],
     this.permissions = const [],
   });
+
+  /// True once the backend has assigned this user the `trusted` role —
+  /// this is the single source of truth for "is this user verified"
+  /// across the app (covers both normally-approved users and any account
+  /// fast-tracked directly on the backend, since both end up with the
+  /// same role). NEW.
+  bool get isTrusted => roles.contains(trustedRole);
 
   AuthState copyWith({
     AuthStatus? status,

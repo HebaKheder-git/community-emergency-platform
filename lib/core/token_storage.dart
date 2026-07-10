@@ -26,6 +26,7 @@ class TokenStorage {
   static const _tempTokenKey = 'temp_token';
   static const _userEmailKey = 'user_email';
   static const _userNameKey = 'user_name';
+  static const _userIdKey = 'user_id'; // NEW
 
   Future<void> saveAuthToken(String token) =>
       _storage.write(key: _authTokenKey, value: token);
@@ -39,11 +40,23 @@ class TokenStorage {
 
   Future<void> clearTempToken() => _storage.delete(key: _tempTokenKey);
 
-  Future<void> saveProfile({required String email, String? name}) async {
+  Future<void> saveProfile({
+    required String email,
+    String? name,
+    int? id, // NEW
+  }) async {
     await _storage.write(key: _userEmailKey, value: email);
     if (name != null) {
       await _storage.write(key: _userNameKey, value: name);
     }
+    if (id != null) {
+      await _storage.write(key: _userIdKey, value: id.toString()); // NEW
+    }
+  }
+
+  Future<int?> readId() async { // NEW
+    final raw = await _storage.read(key: _userIdKey);
+    return raw == null ? null : int.tryParse(raw);
   }
 
   Future<String?> readEmail() => _storage.read(key: _userEmailKey);

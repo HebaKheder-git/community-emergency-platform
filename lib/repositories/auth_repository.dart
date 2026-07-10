@@ -158,6 +158,7 @@ Future<String> verifyRegistrationCode({
     await _tokenStorage.saveProfile(
       email: user['email'] as String,
       name: user['name'] as String?,
+      id: user['id'] as int?, // NEW
     );
 
     return MeResult(

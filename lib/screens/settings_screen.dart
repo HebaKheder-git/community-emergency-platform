@@ -30,10 +30,9 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../cubits/trust_verification/trust_verification_cubit.dart';
-import '../cubits/trust_verification/trust_verification_state.dart';
-import '../core/token_storage.dart';
 import '../cubits/auth/auth_cubit.dart';
+import '../cubits/auth/auth_state.dart';
+import '../core/token_storage.dart';
 import '../cubits/password_reset/password_reset_cubit.dart';
 import '../cubits/password_reset/password_reset_state.dart';
 import 'edit_profile_screen.dart';
@@ -332,9 +331,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             // ── Scrollable body ─────────────────────────────────────────────
             Expanded(
-              child: BlocBuilder<TrustVerificationCubit, TrustVerificationState>(
-                builder: (context, state) {
-                  final isVerified = state.data.isApproved;
+              child: BlocBuilder<AuthCubit, AuthState>(
+                builder: (context, authState) {
+                  final isVerified = authState.isTrusted;
                   // ── Account tiles ───────────────────────────────────────
                   // "Edit profile" and "Reset password" are shared — written
                   // once — for both verification states.
