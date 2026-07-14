@@ -12,6 +12,9 @@ import '../cubits/auth/auth_cubit.dart';
 import '../cubits/auth/auth_state.dart';
 import '../widgets/home_unverified_content.dart';
 import 'home_location_search_screen.dart'; // ← NEW: Search for Group entry point
+import '../cubits/emergency_group/emergency_group_cubit.dart'; // NEW
+import '../cubits/emergency_group/emergency_group_state.dart'; // NEW
+import '../widgets/home_not_joined_group_content.dart'; // NEW
 
 // ════════════════════════════════════════════════════════════════════════════
 // HomeScreen — Emergency Request (SOS) Screen
@@ -37,6 +40,12 @@ class _HomeScreenState extends State<HomeScreen>
   /// Cleared when the user opens the Chat screen.
   bool _chatHasUnread = true; // start as true to match Figma
 
+  // NEW — separate from AuthCubit's verified check: tracks whether this
+  // verified user already belongs to a home emergency group. Created here
+  // (same pattern as ChatCubit in CommunityChatScreen) and provided to the
+  // widget tree via BlocProvider.value in build().
+  final EmergencyGroupCubit _groupCubit = EmergencyGroupCubit();
+
   // Pulse animation
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
@@ -45,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void initState() {
     super.initState();
-
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -62,11 +70,14 @@ class _HomeScreenState extends State<HomeScreen>
     _pulseAnim = Tween<double>(begin: 1.0, end: 1.45).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeOut),
     );
+
+    _groupCubit.loadHomeGroup(); // NEW — checks GET /emergency/my-group
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
+    _groupCubit.close(); // NEW
     super.dispose();
   }
 
@@ -175,7 +186,9 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return BlocProvider.value( // NEW — provides _groupCubit to the subtree below
+      value: _groupCubit, // NEW
+      child: Scaffold(
       backgroundColor: const Color(0xFFF0F0F0),
       body: BlocBuilder<AuthCubit, AuthState>(
         builder: (context, authState) {
@@ -192,7 +205,28 @@ class _HomeScreenState extends State<HomeScreen>
       // Chat / Notifications / Service providers instead use:
       // return const SafeArea(child: UnverifiedAccessNotice());
     }
-    return SafeArea(
+    // NEW — verified, but SOS/chat also require the user to belong to a
+    // home group. Same "gate first, render after" pattern as the verified
+    // check above.
+    return BlocBuilder<EmergencyGroupCubit, EmergencyGroupState>(
+      builder: (context, groupState) {
+        final checkStatus = groupState.homeGroupCheckStatus;
+        if (checkStatus == HomeGroupCheckStatus.unknown ||
+            checkStatus == HomeGroupCheckStatus.checking) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (checkStatus == HomeGroupCheckStatus.noGroup) {
+          return HomeNotJoinedGroupContent(
+            userName: widget.userName,
+            onBellTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            ),
+            onSearchForGroupPressed: _onSearchForGroupPressed,
+          );
+        }
+        // checkStatus == HomeGroupCheckStatus.hasGroup:
+        return SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -369,45 +403,11 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
 
-            // ── Search for Group ───────────────────────────────────────────
-            // NEW. Only rendered here, inside the `verified` branch of this
-            // BlocBuilder — an unverified user never sees this button, which
-            // is what makes "account must be verified" hold.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: GestureDetector(
-                onTap: _onSearchForGroupPressed,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.groups_outlined,
-                          color: AppColors.primaryRed),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'Search for Emergency Group',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right,
-                          color: AppColors.textGrey),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            // ── "Search for Emergency Group" button removed from here ──────
+            // NEW: this button now only appears in HomeNotJoinedGroupContent
+            // (above), shown to verified users who haven't joined a group
+            // yet. A user who reaches this branch already has a group, so
+            // there's no need for the button on the SOS screen itself.
 
             // ── Available for emergency alert toggle ─────────────────────────
             Padding(
@@ -453,6 +453,8 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       );
+      }, // NEW — closes builder: (context, groupState) {
+    ); // NEW — closes BlocBuilder<EmergencyGroupCubit, EmergencyGroupState>(
      },
     ),
 
@@ -462,7 +464,8 @@ class _HomeScreenState extends State<HomeScreen>
         onTap: _onNavTap,
         chatHasUnread: _chatHasUnread,
       ),
-    );
+      ), // NEW — closes Scaffold(
+    ); // NEW — closes BlocProvider.value(
   }
 }
 

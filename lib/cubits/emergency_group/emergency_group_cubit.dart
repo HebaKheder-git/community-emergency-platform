@@ -113,15 +113,39 @@ class EmergencyGroupCubit extends Cubit<EmergencyGroupState> {
     }
   }
   /// GET /emergency/my-group — call once when the app starts (e.g. in
-  /// HomeScreen.initState) so a returning trusted user who already belongs
-  /// to a home group gets chat access restored without repeating the join
-  /// flow. Silent on failure — this is a background check, not a
-  /// user-triggered action; the chat screen surfaces its own error if
-  /// loading messages fails.
+  /// HomeScreen.initState) so:
+  ///  1. a returning trusted user who already belongs to a home group gets
+  ///     chat access restored without repeating the join flow, and
+  ///  2. HomeScreen knows whether to show the SOS screen (has a group) or
+  ///     the "search for a group" prompt (does not).
+  /// Errors are swallowed into [HomeGroupCheckStatus.noGroup] rather than
+  /// rethrown — this is a background check, not a user-triggered action,
+  /// so HomeScreen should always land on *some* renderable state instead
+  /// of getting stuck on a spinner. (The repository already turns 403/404
+  /// into a null result; this catch only covers other failures, e.g. no
+  /// network.)
   Future<void> loadHomeGroup() async {
-    final info = await _repository.getMyGroup();
-    if (info != null && info.hasChatAccess) {
-      emit(state.copyWith(chatId: info.chatId));
+    emit(state.copyWith(homeGroupCheckStatus: HomeGroupCheckStatus.checking));
+    try {
+      final info = await _repository.getMyGroup();
+      // NEW — gate on info.hasGroup (groupId-based), NOT just "info != null"
+      // and NOT chatId. See the doc comment on HomeGroupInfo.hasGroup: a
+      // "not a member" response can still parse into a non-null,
+      // all-fields-null HomeGroupInfo, and chatId can legitimately be null
+      // for an approved-but-pending group.
+      if (info != null && info.hasGroup) {
+        emit(state.copyWith(
+          homeGroupCheckStatus: HomeGroupCheckStatus.hasGroup,
+          homeGroupInfo: info,
+          chatId: info.chatId,
+        ));
+      } else {
+        emit(state.copyWith(
+          homeGroupCheckStatus: HomeGroupCheckStatus.noGroup,
+        ));
+      }
+    } on ApiException catch (_) {
+      emit(state.copyWith(homeGroupCheckStatus: HomeGroupCheckStatus.noGroup));
     }
   }
 }

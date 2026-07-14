@@ -175,11 +175,15 @@ class JoinConfirmationResult {
 }
 /// Response of GET /emergency/my-group.
 ///
-/// ⚠️ ASSUMPTION FLAG: no sample response in the collection for this
-/// endpoint (empty "response": []). Postman description says it "Returns
-/// group + membership + chat_id (= group.id)", so I'm assuming:
-/// { "data": { "chat_id": 4, "group": { "id": 4, "name": "..." } } }
-/// Parsed defensively — send a real sample and I'll tighten this.
+/// Confirmed by the "Emergency — Membership (Trusted)" Postman collection:
+///   { "data": { "group": {...}, "membership": {...}, "chat_id": 17 } }
+/// chat_id == group.id for an official/active membership, and chat_id is
+/// genuinely null for a pending membership (not yet approved) — do NOT
+/// fall back to group.id when chat_id is null, that would fabricate chat
+/// access the user doesn't actually have yet.
+/// "Not a member yet" comes back as either a thrown 403/404, or an HTTP
+/// 200 with `{ "message": "...", "data": null }` — both are handled by
+/// EmergencyGroupRepository.getMyGroup() / HomeGroupInfo.hasGroup below.
 class HomeGroupInfo {
   final int? chatId;
   final int? groupId;
@@ -198,11 +202,20 @@ class HomeGroupInfo {
         : null;
 
     return HomeGroupInfo(
-      chatId: toInt(root['chat_id']) ?? toInt(group?['id']),
+      // NEW — chat_id is taken as-is, no fallback to group.id. A pending
+      // membership legitimately has chat_id: null; inferring it from
+      // group.id would wrongly claim chat access that doesn't exist yet.
+      chatId: toInt(root['chat_id']),
       groupId: toInt(group?['id']) ?? toInt(root['group_id']),
       groupName: group?['name'] as String?,
     );
   }
 
   bool get hasChatAccess => chatId != null;
+
+  /// The actual "does this user belong to a group" signal — checks
+  /// groupId, NOT chatId. A pending-group member has a real group with
+  /// chatId still null until approved, so SOS must show for them too;
+  /// only groupId reliably means "has a group" either way.
+  bool get hasGroup => groupId != null;
 }
